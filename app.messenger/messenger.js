@@ -712,6 +712,45 @@ window.Messenger = {
       return;
     }
 
+    // If it's a "thinking" message, handle the thinking overlay
+    if (scriptMsg.kind === "thinking") {
+      const blocks = scriptMsg.blocks || [];
+
+      // Initialize thinking state if not already set
+      if (typeof conv.thinkingBlockIndex !== "number") {
+        conv.thinkingBlockIndex = 0;
+      }
+
+      // Check if we have more blocks to show
+      if (conv.thinkingBlockIndex < blocks.length) {
+        // Show the current thinking block
+        conv.activeThinking = {
+          text: blocks[conv.thinkingBlockIndex],
+          blockIndex: conv.thinkingBlockIndex,
+          totalBlocks: blocks.length
+        };
+        conv.thinkingBlockIndex += 1;
+        this.renderConversation();
+        return;
+      }
+
+      // All blocks shown, close thinking and move to next message
+      conv.activeThinking = null;
+      conv.thinkingBlockIndex = undefined;
+
+      // Record the action in history for going back (with blocks info)
+      if (!Array.isArray(conv.actionHistory)) conv.actionHistory = [];
+      conv.actionHistory.push({
+        type: 'thinking',
+        previousScriptIndex: conv.scriptIndex,
+        totalBlocks: blocks.length
+      });
+
+      conv.scriptIndex += 1;
+      this.advanceConversation(conv);
+      return;
+    }
+
     // If it's a "delete" message, handle the deletion
     if (scriptMsg.kind === "delete") {
       conv.scriptIndex += 1;
@@ -2116,6 +2155,57 @@ window.Messenger = {
         continue;
       }
 
+      // --- THINKING BLOCK: $thinking ... (until next message) ---
+      if (/^\$thinking\b/i.test(trimmed)) {
+        flushCurrentMessage();
+
+        // Collect all lines until we hit a normal message line (key : text)
+        const thinkingLines = [];
+        i++;
+
+        while (i < lines.length) {
+          const thinkLine = lines[i];
+          const thinkTrimmed = thinkLine.trim();
+
+          // Check if this line is a normal message (key : text)
+          // This ends the thinking block
+          if (/^([^:]+)\s*:(.*)$/.test(thinkLine) && !thinkTrimmed.startsWith('$')) {
+            break;
+          }
+
+          // Check for other $ commands that would end thinking
+          if (/^\$(status|talks|insta|slut|lock|delete|thinking)\b/i.test(thinkTrimmed)) {
+            break;
+          }
+
+          // Check for choice/path markers that would end thinking
+          if (/^(choice|real\s*choice|path\s+\w+|end\s*path)$/i.test(thinkTrimmed)) {
+            break;
+          }
+
+          // Check for character header [Name]
+          if (/^\[.+\]$/.test(thinkTrimmed)) {
+            break;
+          }
+
+          thinkingLines.push(thinkLine);
+          i++;
+        }
+
+        // Parse thinking blocks separated by $/
+        const thinkingText = thinkingLines.join('\n');
+        const blocks = thinkingText.split(/\$\//).map(block => block.trim()).filter(block => block.length > 0);
+
+        if (blocks.length > 0) {
+          rawMessages.push({
+            kind: "thinking",
+            blocks: blocks
+          });
+        }
+
+        continue;
+      }
+
       // --- Normal lines: NPC / MC messages ---
       const match = rawLine.match(/^([^:]+)\s*:(.*)$/);
       if (match) {
@@ -2247,6 +2337,12 @@ window.Messenger = {
       } else if (msg.kind === "pathEnd") {
         convObj.messages.push({
           kind: "pathEnd",
+          filename: filename
+        });
+      } else if (msg.kind === "thinking") {
+        convObj.messages.push({
+          kind: "thinking",
+          blocks: msg.blocks,
           filename: filename
         });
       } else {
@@ -2472,8 +2568,8 @@ window.Messenger = {
         continue;
       }
 
-      // Special messages: skip them (unlocks and locks are handled separately)
-      if (scriptMsg.kind === "unlock" || scriptMsg.kind === "unlockInsta" || scriptMsg.kind === "unlockSlutOnly" || scriptMsg.kind === "lock") {
+      // Special messages: skip them (unlocks, locks, and thinking are handled separately)
+      if (scriptMsg.kind === "unlock" || scriptMsg.kind === "unlockInsta" || scriptMsg.kind === "unlockSlutOnly" || scriptMsg.kind === "lock" || scriptMsg.kind === "thinking") {
         conv.scriptIndex++;
         continue;
       }
@@ -2806,8 +2902,35 @@ window.Messenger = {
       this.scrollToBottom();
     }
 
+    // Render thinking overlay if active
+    this.renderThinkingOverlay(conv);
+
     // Display the correct area at bottom (idle or active choice block)
     this.renderChoices(conv);
+  },
+
+  renderThinkingOverlay(conv) {
+    // Remove existing overlay if any
+    const existingOverlay = this.root.querySelector('.ms-thinking-overlay');
+    if (existingOverlay) {
+      existingOverlay.remove();
+    }
+
+    // Check if we have active thinking to display
+    if (!conv || !conv.activeThinking) {
+      return;
+    }
+
+    // Create the overlay element
+    const overlay = document.createElement('div');
+    overlay.className = 'ms-thinking-overlay';
+    overlay.textContent = conv.activeThinking.text;
+
+    // Insert the overlay in the chat section
+    const chatSection = this.root.querySelector('.ms-chat');
+    if (chatSection) {
+      chatSection.appendChild(overlay);
+    }
   },
 
   renderChoices(conv) {
@@ -3248,6 +3371,35 @@ window.Messenger = {
       }
     }
 
+    // If we're in the middle of a thinking block, go back to previous block or exit thinking
+    if (conv.activeThinking) {
+      const currentBlockIndex = conv.activeThinking.blockIndex;
+
+      if (currentBlockIndex > 0) {
+        // Go back to previous block
+        const scriptMsg = conv.messages[conv.scriptIndex];
+        if (scriptMsg && scriptMsg.kind === 'thinking') {
+          conv.thinkingBlockIndex = currentBlockIndex;
+          conv.activeThinking = {
+            text: scriptMsg.blocks[currentBlockIndex - 1],
+            blockIndex: currentBlockIndex - 1,
+            totalBlocks: scriptMsg.blocks.length
+          };
+        }
+        this.renderConversation();
+        return;
+      } else {
+        // Exit thinking mode completely (we're at first block)
+        conv.activeThinking = null;
+        conv.thinkingBlockIndex = undefined;
+        // Continue to normal goBack logic if there's history
+        if (!Array.isArray(conv.actionHistory) || !conv.actionHistory.length) {
+          this.renderConversation();
+          return;
+        }
+      }
+    }
+
     // If no history or empty, nothing to do
     if (!Array.isArray(conv.actionHistory) || !conv.actionHistory.length) return;
 
@@ -3471,6 +3623,22 @@ window.Messenger = {
       // Restore script index
       conv.scriptIndex = lastAction.previousScriptIndex;
       // Don't pop playedMessages because delete doesn't add a message
+    } else if (lastAction.type === 'thinking') {
+      // Restore thinking state - show the last block of thinking
+      conv.scriptIndex = lastAction.previousScriptIndex;
+
+      // Get the thinking message and show the last block
+      const scriptMsg = conv.messages[conv.scriptIndex];
+      if (scriptMsg && scriptMsg.kind === 'thinking') {
+        const lastBlockIndex = lastAction.totalBlocks - 1;
+        conv.thinkingBlockIndex = lastAction.totalBlocks;
+        conv.activeThinking = {
+          text: scriptMsg.blocks[lastBlockIndex],
+          blockIndex: lastBlockIndex,
+          totalBlocks: lastAction.totalBlocks
+        };
+      }
+      // Don't pop playedMessages because thinking doesn't add a message
     } else {
       // Remove last displayed message (for script and choice)
       if (conv.playedMessages.length > 0) {
