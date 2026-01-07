@@ -1494,6 +1494,15 @@ window.SpyMessenger = {
         container.addEventListener('click', () => {
           this.openLightbox(video.src, 'video');
         });
+
+        // Seek to a better frame for thumbnail (avoid black first frame)
+        video.addEventListener('loadedmetadata', () => {
+          const duration = video.duration;
+          const thumbnailTime = Math.min(0.5, duration * 0.1);
+          if (thumbnailTime > 0 && duration > 0) {
+            video.currentTime = thumbnailTime;
+          }
+        });
       }
     });
 

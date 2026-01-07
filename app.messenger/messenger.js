@@ -4426,6 +4426,13 @@ window.Messenger = {
         const minutes = Math.floor(duration / 60);
         const seconds = Math.floor(duration % 60);
         durationEl.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+
+        // Seek to a better frame for thumbnail (avoid black first frame)
+        // Use 0.5s or 10% of duration, whichever is smaller
+        const thumbnailTime = Math.min(0.5, duration * 0.1);
+        if (thumbnailTime > 0 && duration > 0) {
+          video.currentTime = thumbnailTime;
+        }
       });
 
       videoContainer.appendChild(video);
