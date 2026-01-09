@@ -12,7 +12,7 @@
     <div class="layout">
         <aside class="sidebar" id="sidebar">
             <div class="sidebar-header">
-                <h1>Studio</h1>
+                <h1>NTR.S Emperor Framework</h1>
                 <p>Documentation</p>
             </div>
 
@@ -34,6 +34,7 @@
                     <a href="#conversations" class="nav-link sub">Conversations</a>
                     <a href="#commands" class="nav-link sub">Commands</a>
                     <a href="#media" class="nav-link sub">Media</a>
+                    <a href="#reactions" class="nav-link sub">Reactions</a>
                     <a href="#thinking" class="nav-link sub">Thinking</a>
                     <a href="#choices" class="nav-link sub">Choices</a>
                     <a href="instapics.html" class="nav-link">InstaPics</a>
@@ -235,6 +236,42 @@ mc : I completely forgot.</code></pre>
                     <td>Typing indicator (2000ms)</td>
                 </tr>
             </table>
+
+            <h3 id="reactions">Message Reactions</h3>
+            <p>The <code>$react</code> command allows you to add emoji reactions to the previous message. Reactions appear at the bottom of the message bubble with a smooth animation.</p>
+
+<pre><code>gf : Look at this photo!
+gf : $pics = photo.jpg
+$react (🥵 = gf, be, ro) (🤣 = li)</code></pre>
+
+            <table>
+                <tr>
+                    <th>Element</th>
+                    <th>Description</th>
+                </tr>
+                <tr>
+                    <td><code>$react</code></td>
+                    <td>Adds reactions to the previous message (text, image, video, or audio)</td>
+                </tr>
+                <tr>
+                    <td><code>(🥵 = gf, be, ro)</code></td>
+                    <td>The emoji followed by the characters who reacted. Use abbreviations or full names.</td>
+                </tr>
+                <tr>
+                    <td>Multiple reactions</td>
+                    <td>You can add multiple reaction groups in the same command: <code>$react (🥵 = gf) (🤣 = be)</code></td>
+                </tr>
+            </table>
+
+            <div class="info-box info">
+                <div class="info-box-title">How it works</div>
+                <p>Reactions appear with a staggered animation (1.5s to 3s delay) when the message is first displayed. Hovering over a reaction shows who reacted (full names, displayed vertically if multiple people).</p>
+            </div>
+
+            <div class="info-box tip">
+                <div class="info-box-title">Tip</div>
+                <p>Only the first character of the emoji is used. If you accidentally write <code>(🥵🥵 = gf)</code>, only <code>🥵</code> will be displayed.</p>
+            </div>
 
             <h3 id="thinking">MC Thoughts ($thinking)</h3>
             <p>The <code>$thinking</code> command displays the MC's inner thoughts as an overlay on top of the chat. This is useful to show what the MC is thinking without sending an actual message.</p>
@@ -445,6 +482,10 @@ $talks = chapter2/example.txt</code></pre>
                 <tr>
                     <td><code>$delete</code></td>
                     <td>Delete message</td>
+                </tr>
+                <tr>
+                    <td><code>$react (emoji = keys)</code></td>
+                    <td>Add reactions to previous message</td>
                 </tr>
                 <tr>
                     <td><code>$thinking</code></td>
