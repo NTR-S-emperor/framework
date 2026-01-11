@@ -5014,8 +5014,17 @@ window.Messenger = {
           // Add animation delay for staggered appearance (1.5s to 3s)
           const delay = baseDelay + (reactionIndex * delayIncrement);
           reactionEl.style.animationDelay = `${delay}ms`;
+
+          // Trigger bubble expansion just before first reaction appears
+          if (reactionIndex === 0) {
+            setTimeout(() => {
+              reactionsContainer.classList.add('ms-msg-reactions--visible');
+            }, baseDelay - 50); // Slightly before the reaction animation starts
+          }
         } else {
           reactionEl.className = 'ms-msg-reaction ms-msg-reaction--static';
+          // Static reactions: expand immediately
+          reactionsContainer.classList.add('ms-msg-reactions--visible');
         }
         // Limit to first character/emoji only
         const firstEmoji = [...reaction.emoji][0] || reaction.emoji;
