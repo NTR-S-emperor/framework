@@ -565,6 +565,38 @@ window.Messenger = {
       conv.nextChoiceIdx = 0;
     }
 
+    // Check if there's a pending response from a choice (displayed on next click)
+    if (conv.pendingChoiceResponse) {
+      const responseMsg = conv.pendingChoiceResponse;
+      conv.pendingChoiceResponse = null;
+
+      // Add the response message
+      const msgToAdd = {
+        kind: responseMsg.kind,
+        from: responseMsg.from,
+        speakerKey: responseMsg.speakerKey,
+        text: responseMsg.text,
+        chapter: responseMsg.chapter
+      };
+      if (responseMsg.reactions && responseMsg.reactions.length > 0) {
+        msgToAdd.reactions = responseMsg.reactions;
+      }
+      conv.playedMessages.push(msgToAdd);
+
+      // Update the existing 'choice' action to include this message
+      // So goBack will remove both messages and return to the choice
+      if (Array.isArray(conv.actionHistory) && conv.actionHistory.length > 0) {
+        const lastAction = conv.actionHistory[conv.actionHistory.length - 1];
+        if (lastAction.type === 'choice') {
+          lastAction.messagesAdded = (lastAction.messagesAdded || 1) + 1;
+        }
+      }
+
+      this.renderConversation();
+      this.resumeAutoPlay();
+      return;
+    }
+
     const scriptMessages = conv.messages;
     const fakeChoices = conv.fakeChoices;
 
@@ -2006,28 +2038,110 @@ window.Messenger = {
           if (joined) block.options.push(joined);
         }
 
-        // Post-process options to extract responses (format: "Choice text [speaker : response]")
+        // Post-process options to extract responses and reactions
+        // Formats supported:
+        // 1. Simple choice: "Choice text"
+        // 2. Choice with reaction: "Choice text [$react (emoji = key)]"
+        // 3. Choice with bracket response: "Choice text [speaker : response]"
+        // 4. Choice with bracket response and reaction: "Choice text [$react (...)] [speaker : response [$react (...)]]"
         block.options = block.options.map(optText => {
-          // Match [speaker : message] pattern
-          const bracketMatch = optText.match(/\[([^\]]+)\]\s*$/);
-          if (bracketMatch) {
-            const choiceText = optText.slice(0, optText.lastIndexOf('[')).trim();
-            const responsePart = bracketMatch[1].trim();
-            // Parse "speaker : message"
-            const colonIndex = responsePart.indexOf(':');
-            if (colonIndex !== -1) {
-              const speaker = responsePart.slice(0, colonIndex).trim().toLowerCase();
-              const message = responsePart.slice(colonIndex + 1).trim();
-              return {
-                text: choiceText,
-                response: { speaker, message }
-              };
+          const result = {
+            text: optText,
+            response: null,
+            reactions: null,        // Reactions for the MC choice
+            responseReactions: null // Reactions for the response
+          };
+
+          // Helper function to parse and extract $react pattern from a string
+          const extractReact = (str) => {
+            const reactMatch = str.match(/\[\$react\s*\(([^)]+)\)\s*\]/i);
+            if (reactMatch) {
+              const cleaned = str.replace(reactMatch[0], '').trim();
+              // Parse the reaction: emoji = keys
+              const reactionContent = reactMatch[1].trim();
+              const eqIndex = reactionContent.indexOf('=');
+              if (eqIndex !== -1) {
+                const emoji = reactionContent.slice(0, eqIndex).trim();
+                const keysStr = reactionContent.slice(eqIndex + 1).trim();
+                const keys = keysStr.split(',').map(k => {
+                  const trimmedKey = k.trim().toLowerCase();
+                  // Resolve to the normalized key if possible
+                  if (this.nameToKey && this.nameToKey[trimmedKey]) {
+                    return this.nameToKey[trimmedKey];
+                  }
+                  return trimmedKey;
+                }).filter(k => k.length > 0);
+                if (emoji && keys.length > 0) {
+                  return { cleaned, reactions: [{ emoji, keys }] };
+                }
+              }
+              return { cleaned, reactions: null };
             }
-            // Bracket found but no valid response format
-            return { text: choiceText, response: null };
+            return { cleaned: str, reactions: null };
+          };
+
+          let workingText = optText;
+
+          // Helper function to find matching bracket (handles nested brackets)
+          const findMatchingBracket = (str) => {
+            // Find the last '[' that starts a response pattern [speaker : ...]
+            // We need to find balanced brackets
+            let lastOpenBracket = -1;
+            let depth = 0;
+
+            // Search from the end to find the outermost [...] at the end
+            for (let j = str.length - 1; j >= 0; j--) {
+              if (str[j] === ']') {
+                if (depth === 0) {
+                  // This is the end of our target bracket
+                  depth = 1;
+                } else {
+                  depth++;
+                }
+              } else if (str[j] === '[') {
+                depth--;
+                if (depth === 0) {
+                  lastOpenBracket = j;
+                  break;
+                }
+              }
+            }
+
+            if (lastOpenBracket === -1) return null;
+
+            // Extract the content between the balanced brackets
+            const content = str.slice(lastOpenBracket + 1, str.length - 1).trim();
+            const before = str.slice(0, lastOpenBracket).trim();
+
+            return { content, before };
+          };
+
+          // Check for bracket response at the end [speaker : message] (handles nested brackets)
+          const bracketResult = findMatchingBracket(workingText);
+          if (bracketResult) {
+            const content = bracketResult.content;
+            // It's a response if it has : but doesn't start with $react
+            if (!content.toLowerCase().startsWith('$react') && content.includes(':')) {
+              const colonIndex = content.indexOf(':');
+              const speaker = content.slice(0, colonIndex).trim().toLowerCase();
+              let message = content.slice(colonIndex + 1).trim();
+
+              // Extract reaction from the response message
+              const { cleaned: cleanedMessage, reactions: respReactions } = extractReact(message);
+
+              result.response = { speaker, message: cleanedMessage };
+              result.responseReactions = respReactions;
+
+              workingText = bracketResult.before;
+            }
           }
-          // No bracket - simple choice
-          return { text: optText, response: null };
+
+          // Now extract reaction from the choice text
+          const { cleaned: cleanedChoice, reactions: choiceReactions } = extractReact(workingText);
+          result.text = cleanedChoice;
+          result.reactions = choiceReactions;
+
+          return result;
         });
 
         if (block.options.length) {
@@ -3526,42 +3640,49 @@ window.Messenger = {
         ? conv.fakeChoices[blockIndex]
         : null;
 
-    // Support both old format (string) and new format (object with text/response)
+    // Support both old format (string) and new format (object with text/response/reactions)
     const optionText = typeof option === 'string' ? option : option.text;
     const optionResponse = typeof option === 'object' ? option.response : null;
+    const optionReactions = typeof option === 'object' ? option.reactions : null;
+    const optionResponseReactions = typeof option === 'object' ? option.responseReactions : null;
 
-    // Add MC's choice as a message
-    conv.playedMessages.push({
+    // Add MC's choice as a message (with reactions if present)
+    const mcMessage = {
       kind: "talk",
       from: "mc",
       text: optionText,
       chapter: block ? block.chapter : null
-    });
-
-    // If there's a response from an interlocutor, add it too
-    if (optionResponse && optionResponse.speaker && optionResponse.message) {
-      // Resolve speaker key (could be abbreviation like "gf" or full name)
-      const speakerKey = this.nameToKey[optionResponse.speaker] || optionResponse.speaker;
-      conv.playedMessages.push({
-        kind: "talk",
-        from: speakerKey === 'mc' ? 'mc' : conv.key,
-        speakerKey: speakerKey,
-        text: optionResponse.message,
-        chapter: block ? block.chapter : null
-      });
+    };
+    if (optionReactions && optionReactions.length > 0) {
+      mcMessage.reactions = optionReactions;
     }
-
-    // Save choice for optimized saving
-    if (!Array.isArray(conv.choicesMade)) conv.choicesMade = [];
-    conv.choicesMade.push(optionText);
+    conv.playedMessages.push(mcMessage);
 
     // Save action in history for going back
     if (!Array.isArray(conv.actionHistory)) conv.actionHistory = [];
     conv.actionHistory.push({
       type: 'choice',
       choiceIdx: blockIndex,
-      previousNextChoiceIdx: conv.nextChoiceIdx
+      previousNextChoiceIdx: conv.nextChoiceIdx,
+      messagesAdded: 1
     });
+
+    // If there's a response from an interlocutor, store it as pending (will show on next click)
+    if (optionResponse && optionResponse.speaker && optionResponse.message) {
+      const speakerKey = this.nameToKey[optionResponse.speaker] || optionResponse.speaker;
+      conv.pendingChoiceResponse = {
+        kind: "talk",
+        from: speakerKey === 'mc' ? 'mc' : conv.key,
+        speakerKey: speakerKey,
+        text: optionResponse.message,
+        chapter: block ? block.chapter : null,
+        reactions: optionResponseReactions || null
+      };
+    }
+
+    // Save choice for optimized saving
+    if (!Array.isArray(conv.choicesMade)) conv.choicesMade = [];
+    conv.choicesMade.push(optionText);
 
     // this block is consumed
     conv.waitingForChoice = false;
@@ -3949,15 +4070,13 @@ window.Messenger = {
       }
       // Don't pop playedMessages because thinking doesn't add a message
     } else {
-      // Remove last displayed message (for script and choice)
-      if (conv.playedMessages.length > 0) {
-        conv.playedMessages.pop();
-      }
-
-      if (lastAction.type === 'script') {
-        // Restore script index
-        conv.scriptIndex = lastAction.previousScriptIndex;
-      } else if (lastAction.type === 'choice') {
+      // Remove last displayed message(s) (for script and choice)
+      if (lastAction.type === 'choice') {
+        // Choice may have added multiple messages (MC choice + response)
+        const messagesToRemove = lastAction.messagesAdded || 1;
+        for (let m = 0; m < messagesToRemove && conv.playedMessages.length > 0; m++) {
+          conv.playedMessages.pop();
+        }
         // Restore fake choice state
         conv.waitingForChoice = true;
         conv.activeChoiceIdx = lastAction.choiceIdx;
@@ -3966,6 +4085,16 @@ window.Messenger = {
         if (Array.isArray(conv.choicesMade) && conv.choicesMade.length > 0) {
           conv.choicesMade.pop();
         }
+      } else {
+        // Other types: remove single message
+        if (conv.playedMessages.length > 0) {
+          conv.playedMessages.pop();
+        }
+      }
+
+      if (lastAction.type === 'script') {
+        // Restore script index
+        conv.scriptIndex = lastAction.previousScriptIndex;
       } else if (lastAction.type === 'realChoice') {
         // Restore real choice state
         conv.waitingForRealChoice = true;
