@@ -22,6 +22,7 @@ window.Loader = {
     isReady: false,
     loadingComplete: false,
     progressInterval: null,
+    globalTimeout: null,
     onReadyCallbacks: [],
 
     /**
@@ -42,6 +43,13 @@ window.Loader = {
 
         // Start simulated progress animation
         this.startProgressAnimation();
+
+        // Global timeout: if loading takes more than 20s, force complete
+        this.globalTimeout = setTimeout(() => {
+            if (!this.loadingComplete) {
+                this.complete();
+            }
+        }, 20000);
 
         await this.load();
     },
@@ -199,9 +207,22 @@ window.Loader = {
             this.saveCachedManifest(serverManifest);
 
             // 7. If critical files changed, reload the page to use new versions
-            if (criticalFilesChanged) {
-                window.location.reload();
-                return;
+            // Only reload if we had a previous cache (returning visitor with outdated files)
+            // Don't reload on first visit (empty cache) - nothing to "update"
+            const hadPreviousCache = Object.keys(cachedManifest).length > 0;
+
+            if (criticalFilesChanged && hadPreviousCache) {
+                try {
+                    const reloadKey = 'studio_reloaded';
+                    if (!sessionStorage.getItem(reloadKey)) {
+                        sessionStorage.setItem(reloadKey, 'true');
+                        window.location.reload();
+                        return;
+                    }
+                    // Already reloaded once this session, don't loop
+                } catch (e) {
+                    // sessionStorage unavailable, skip reload
+                }
             }
 
             // 8. Complete loading
@@ -217,7 +238,7 @@ window.Loader = {
      */
     async fetchManifest() {
         try {
-            const response = await fetch('manifest.php', { cache: 'no-store' });
+            const response = await this.fetchWithTimeout('manifest.php', { cache: 'no-store' }, 15000);
             if (!response.ok) return null;
 
             const text = await response.text();
@@ -316,6 +337,18 @@ window.Loader = {
     },
 
     /**
+     * Fetch with timeout
+     */
+    fetchWithTimeout(url, options = {}, timeout = 10000) {
+        return Promise.race([
+            fetch(url, options),
+            new Promise((_, reject) =>
+                setTimeout(() => reject(new Error('Timeout')), timeout)
+            )
+        ]);
+    },
+
+    /**
      * Preload a single file with cache-busting hash
      */
     async preloadFile(path, hash) {
@@ -328,23 +361,24 @@ window.Loader = {
             if (['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'].includes(ext)) {
                 return new Promise((resolve) => {
                     const img = new Image();
-                    img.onload = resolve;
-                    img.onerror = resolve;
+                    const timeout = setTimeout(resolve, 10000); // 10s timeout
+                    img.onload = () => { clearTimeout(timeout); resolve(); };
+                    img.onerror = () => { clearTimeout(timeout); resolve(); };
                     img.src = url;
                 });
             }
 
             // For videos, just fetch headers
             if (['mp4', 'webm'].includes(ext)) {
-                await fetch(url, { method: 'HEAD' });
+                await this.fetchWithTimeout(url, { method: 'HEAD' }, 10000);
                 return;
             }
 
             // For other files, fetch content
-            await fetch(url);
+            await this.fetchWithTimeout(url, {}, 10000);
 
         } catch (e) {
-            // Ignore individual file errors
+            // Ignore individual file errors (including timeouts)
         }
     },
 
@@ -365,6 +399,11 @@ window.Loader = {
      */
     complete() {
         this.loadingComplete = true;
+        // Clear global timeout
+        if (this.globalTimeout) {
+            clearTimeout(this.globalTimeout);
+            this.globalTimeout = null;
+        }
         this.checkComplete();
     },
 

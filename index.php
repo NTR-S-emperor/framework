@@ -72,6 +72,21 @@ function v($path) {
   <link rel="stylesheet" href="<?= v('app.tips/tips.css') ?>">
   <link rel="stylesheet" href="<?= v('app.spy/spy.css') ?>">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.12.2/lottie.min.js"></script>
+  <!-- Pre-calculate scale before content renders to avoid visual jump -->
+  <script>
+    (function() {
+      var PHONE_HEIGHT = 780;
+      var TARGET_FILL = 0.92;
+      var MOBILE_BREAKPOINT = 480;
+      if (window.innerWidth > MOBILE_BREAKPOINT) {
+        var scale = (window.innerHeight * TARGET_FILL) / PHONE_HEIGHT;
+        var style = document.createElement('style');
+        style.id = 'phone-prescale';
+        style.textContent = '.phone-shell { transform: scale(' + scale + '); transform-origin: center center; }';
+        document.head.appendChild(style);
+      }
+    })();
+  </script>
 </head>
 <body class="app-body">
   <div class="phone-shell">
