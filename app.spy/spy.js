@@ -579,10 +579,21 @@ window.SpyMessenger = {
   lightboxOpen: false,
   lightboxType: null,
 
-  // Virtual scrolling configuration (same as MC's Messenger)
+  // Chunked loading configuration (for large conversations)
+  chunkedLoading: {
+    enabled: false,
+    chunkSize: 150,           // Messages per chunk
+    loadThreshold: 200,       // Pixels from edge to trigger load
+    loadedRange: { start: 0, end: 0 },  // Currently loaded message indices
+    totalMessages: 0,
+    isLoading: false,
+    scrollListener: null
+  },
+
+  // Virtual scrolling configuration (legacy - now using chunked loading)
   virtualScroll: {
     enabled: false,
-    buffer: 10,
+    buffer: 30,
     estimatedHeights: {
       text: 52,
       image: 220,
@@ -612,6 +623,17 @@ window.SpyMessenger = {
   // Intersection Observer for thinking triggers
   thinkingObserver: null,
 
+  // Navigation tracking for "next content" feature
+  // Tracks the order of files parsed and their conversations
+  fileSequence: [],        // [{ file: 'start.txt', contactKey: 'benjamin' }, ...]
+  navigationTargets: {},   // { conversationKey: { nextConversation: 'otherKey' } }
+  previousAnchor: 0,       // currentAnchor - 1, used to find where new content starts
+
+  // Scroll position tracking (in-memory only, not persisted)
+  // Reset on page reload / save load, preserved on app switch
+  scrollPositions: {},     // { conversationKey: scrollTop }
+  hasVisitedInSession: {}, // { conversationKey: true } - tracks if we've scrolled to new content
+
   /**
    * Preload data only (characters + conversations) without rendering UI
    * This unlocks posts for InstaPics/OnlySlut
@@ -630,9 +652,17 @@ window.SpyMessenger = {
     this.nameToKey = {};
     this.keyToName = {};
     this.characters = {};
+    this.fileSequence = [];
+    this.navigationTargets = {};
+    this.previousAnchor = Math.max(0, (window.getSpyAnchor ? window.getSpyAnchor() : 0) - 1);
+    // Note: scrollPositions and hasVisitedInSession are NOT reset here
+    // They persist across app switches but reset on page reload naturally
 
     await this.loadCharacters();
     await this.loadConversationsFromStart();
+
+    // Build navigation targets after parsing
+    this.buildNavigationTargets();
 
     this.dataLoaded = true;
   },
@@ -917,7 +947,11 @@ window.SpyMessenger = {
               }
 
               // Check for other $ commands that would end thinking
-              if (/^\$(status|talks|insta|slut|lock|delete|thinking|spy_unlock|spy_anchor)\b/i.test(thinkTrimmed)) {
+              // Note: spy_anchor uses _\d+ pattern (e.g., $spy_anchor_1) so we use a specific match
+              if (/^\$(status|talks|insta|slut|lock|delete|thinking|spy_unlock)\b/i.test(thinkTrimmed)) {
+                break;
+              }
+              if (/^\$spy_anchor[_\s]*\d+/i.test(thinkTrimmed)) {
                 break;
               }
 
@@ -1060,6 +1094,14 @@ window.SpyMessenger = {
         }
 
         this.parsedFiles.push(filename);
+
+        // Track file sequence for navigation
+        if (contactKey) {
+          this.fileSequence.push({
+            file: filename,
+            contactKey: contactKey
+          });
+        }
       } catch (e) {
         console.error(`SpyMessenger: Failed to parse ${filename}`, e);
       }
@@ -1089,6 +1131,54 @@ window.SpyMessenger = {
 
     // Sort by most recent activity (higher = more recent = top)
     this.conversations.sort((a, b) => b.lastActivity - a.lastActivity);
+  },
+
+  /**
+   * Build navigation targets based on file sequence
+   * Determines which conversation leads to which next conversation
+   */
+  buildNavigationTargets() {
+    this.navigationTargets = {};
+
+    // Analyze the file sequence to find conversation transitions
+    // We need to find where one conversation ends and another begins
+    let lastContactKey = null;
+    let conversationOrder = []; // Track unique conversations in order
+
+    for (const entry of this.fileSequence) {
+      if (entry.contactKey !== lastContactKey) {
+        // New conversation encountered
+        if (lastContactKey !== null && entry.contactKey !== lastContactKey) {
+          // Transition from one conversation to another
+          if (!this.navigationTargets[lastContactKey]) {
+            this.navigationTargets[lastContactKey] = {};
+          }
+          this.navigationTargets[lastContactKey].nextConversation = entry.contactKey;
+        }
+        conversationOrder.push(entry.contactKey);
+        lastContactKey = entry.contactKey;
+      }
+    }
+
+    // Add navigation buttons to conversations that have a next conversation
+    for (const key of Object.keys(this.navigationTargets)) {
+      const conv = this.conversationsByKey[key];
+      const target = this.navigationTargets[key];
+      if (conv && target.nextConversation) {
+        // Add a navigation marker at the end of the conversation
+        conv.messages.push({
+          type: 'next_content_button',
+          targetConversation: target.nextConversation
+        });
+      }
+    }
+  },
+
+  /**
+   * Navigate to the next conversation with new content
+   */
+  navigateToNextContent(targetKey) {
+    this.selectConversation(targetKey);
   },
 
   /**
@@ -1151,8 +1241,11 @@ window.SpyMessenger = {
       messengerApp.style.backgroundImage = `url('${textureUrl}')`;
     }
 
-    // Auto-select the first (most recent) conversation
-    if (this.conversations.length > 0) {
+    // Auto-select the first conversation in story order (where content begins)
+    // The list remains sorted by recent activity, but selection follows story flow
+    if (this.fileSequence.length > 0) {
+      this.selectConversation(this.fileSequence[0].contactKey);
+    } else if (this.conversations.length > 0) {
       this.selectConversation(this.conversations[0].key);
     }
   },
@@ -1218,6 +1311,11 @@ window.SpyMessenger = {
     // Reset thinking state when changing conversation
     this.resetThinking();
 
+    // Save scroll position of previous conversation
+    if (this.selectedKey && this.chatMessagesEl) {
+      this.scrollPositions[this.selectedKey] = this.chatMessagesEl.scrollTop;
+    }
+
     this.selectedKey = key;
 
     const conv = this.conversations.find(c => c.key === key);
@@ -1225,10 +1323,16 @@ window.SpyMessenger = {
 
     const messages = conv.messages || [];
 
+    // Check if this is first visit in this session
+    const isFirstVisit = !this.hasVisitedInSession[key];
+
     this.currentConversation = conv;
     this.renderContactsList(); // Update selection highlight
     this.renderChatHeader(conv);
-    this.renderChatMessages(messages);
+    this.renderChatMessages(messages, isFirstVisit);
+
+    // Mark as visited after rendering
+    this.hasVisitedInSession[key] = true;
   },
 
   /**
@@ -1264,53 +1368,68 @@ window.SpyMessenger = {
   },
 
   /**
+   * Find the index of the separator for the previous anchor
+   * Returns -1 if not found (scroll to top in that case)
+   */
+  findPreviousAnchorIndex(messages) {
+    // Find the separator with anchor === previousAnchor
+    for (let i = 0; i < messages.length; i++) {
+      if (messages[i].type === 'separator' && messages[i].anchor === this.previousAnchor) {
+        return i;
+      }
+    }
+    return -1; // Not found, will scroll to top
+  },
+
+  /**
    * Render chat messages with virtual scrolling support
    * In spy mode: GF is "mc" (right side, green), others are "npc" (left side, dark)
    * For groups: show avatar and speaker name with color
+   * @param {Array} messages - The messages to render
+   * @param {boolean} isFirstVisit - If true, scroll to new content; otherwise restore position
    */
-  renderChatMessages(messages) {
+  renderChatMessages(messages, isFirstVisit = true) {
     if (!this.chatMessagesEl) return;
 
     const conv = this.currentConversation;
     if (!conv) return;
 
+    console.log('SpyMessenger renderChatMessages:', {
+      conversationKey: conv.key,
+      messageCount: messages.length,
+      isFirstVisit: isFirstVisit
+    });
+
     if (messages.length === 0) {
       this.chatMessagesEl.innerHTML = '<div class="ms-placeholder">No messages</div>';
+      console.log('SpyMessenger: No messages to render');
       return;
     }
 
-    // Reset virtual scroll for new conversation
-    this.resetVirtualScroll();
+    // Reset chunked loading state
+    this.resetChunkedLoading();
 
-    // Initialize scroll listener
-    this.initVirtualScroll();
+    // Check if we need chunked loading (300+ messages)
+    const useChunkedLoading = messages.length >= 300;
+    console.log('SpyMessenger: useChunkedLoading =', useChunkedLoading, 'messageCount =', messages.length);
 
-    // Check if we need virtual scrolling (100+ messages)
-    const useVirtualScroll = messages.length >= 100;
-
-    if (useVirtualScroll) {
-      // Calculate heights and set initial range to show last messages
-      const cumulativeHeights = this.calculateCumulativeHeights(messages);
-      const totalMessages = messages.length;
-      const buffer = this.virtualScroll.buffer;
-
-      this.virtualScroll.visibleRange = {
-        start: Math.max(0, totalMessages - 50 - buffer),
-        end: totalMessages
-      };
-
-      this.renderVirtualMessages(conv, messages, cumulativeHeights, true);
+    if (useChunkedLoading) {
+      // Use chunked loading for large conversations
+      this.renderChunkedMessages(conv, messages, isFirstVisit);
     } else {
       // Standard rendering for small conversations
-      this.virtualScroll.enabled = false;
-      this.renderAllMessages(conv, messages);
+      this.chunkedLoading.enabled = false;
+      this.renderAllMessages(conv, messages, isFirstVisit);
     }
   },
 
   /**
    * Render all messages (for small conversations < 100 messages)
+   * @param {Object} conv - The conversation object
+   * @param {Array} messages - The messages to render
+   * @param {boolean} isFirstVisit - If true, scroll to new content; otherwise restore position
    */
-  renderAllMessages(conv, messages) {
+  renderAllMessages(conv, messages, isFirstVisit = true) {
     let html = '';
     let lastSender = null;
 
@@ -1321,22 +1440,310 @@ window.SpyMessenger = {
 
     this.chatMessagesEl.innerHTML = html;
     this.bindMediaEvents();
-    this.chatMessagesEl.scrollTop = this.chatMessagesEl.scrollHeight;
+
+    // DEBUG: Log container dimensions to diagnose scroll issue
+    console.log('SpyMessenger scroll debug:', {
+      messageCount: messages.length,
+      htmlLength: html.length,
+      clientHeight: this.chatMessagesEl.clientHeight,
+      scrollHeight: this.chatMessagesEl.scrollHeight,
+      canScroll: this.chatMessagesEl.scrollHeight > this.chatMessagesEl.clientHeight,
+      overflow: getComputedStyle(this.chatMessagesEl).overflow,
+      childCount: this.chatMessagesEl.children.length
+    });
+
+    // Determine scroll position
+    if (isFirstVisit) {
+      // First visit: scroll to the beginning of new content
+      const anchorIndex = this.findPreviousAnchorIndex(messages);
+      if (anchorIndex >= 0) {
+        // Find the separator element and scroll to it
+        const separatorEl = this.chatMessagesEl.querySelector(`.ms-separator[data-anchor="${this.previousAnchor}"]`);
+        if (separatorEl) {
+          // Scroll so the separator is at the top of the view
+          separatorEl.scrollIntoView({ behavior: 'instant', block: 'start' });
+        } else {
+          // Fallback: scroll to top
+          this.chatMessagesEl.scrollTop = 0;
+        }
+      } else {
+        // No separator found: scroll to top (beginning of conversation)
+        this.chatMessagesEl.scrollTop = 0;
+      }
+    } else {
+      // Not first visit: restore saved position or scroll to bottom
+      const savedPosition = this.scrollPositions[conv.key];
+      if (savedPosition !== undefined) {
+        this.chatMessagesEl.scrollTop = savedPosition;
+      } else {
+        this.chatMessagesEl.scrollTop = this.chatMessagesEl.scrollHeight;
+      }
+    }
 
     // Initialize thinking observer after messages are rendered
     this.initThinkingObserver();
   },
 
   /**
-   * Render messages with virtual scrolling (for large conversations)
+   * Reset chunked loading state
    */
-  renderVirtualMessages(conv, messages, cumulativeHeights, scrollToEnd = false) {
-    if (messages.length < 100) {
+  resetChunkedLoading() {
+    // Remove existing scroll listener
+    if (this.chunkedLoading.scrollListener && this.chatMessagesEl) {
+      this.chatMessagesEl.removeEventListener('scroll', this.chunkedLoading.scrollListener);
+    }
+
+    this.chunkedLoading.enabled = false;
+    this.chunkedLoading.loadedRange = { start: 0, end: 0 };
+    this.chunkedLoading.totalMessages = 0;
+    this.chunkedLoading.isLoading = false;
+    this.chunkedLoading.scrollListener = null;
+  },
+
+  /**
+   * Render messages with chunked loading (for large conversations)
+   * Loads a chunk around the anchor point, with "load more" triggers at edges
+   */
+  renderChunkedMessages(conv, messages, isFirstVisit = true) {
+    this.chunkedLoading.enabled = true;
+    this.chunkedLoading.totalMessages = messages.length;
+
+    const chunkSize = this.chunkedLoading.chunkSize;
+
+    // Determine initial chunk based on anchor
+    let centerIndex;
+    if (isFirstVisit) {
+      const anchorIndex = this.findPreviousAnchorIndex(messages);
+      centerIndex = anchorIndex >= 0 ? anchorIndex : 0;
+    } else {
+      // Use middle of current range or start
+      centerIndex = this.chunkedLoading.loadedRange.start || 0;
+    }
+
+    // Calculate chunk boundaries
+    const halfChunk = Math.floor(chunkSize / 2);
+    let start = Math.max(0, centerIndex - halfChunk);
+    let end = Math.min(messages.length, start + chunkSize);
+
+    // Adjust start if we hit the end
+    if (end === messages.length) {
+      start = Math.max(0, end - chunkSize);
+    }
+
+    this.chunkedLoading.loadedRange = { start, end };
+
+    // Build HTML
+    let html = '';
+
+    // Add "load older" trigger if there are older messages
+    if (start > 0) {
+      html += `<div class="spy-load-more spy-load-more--top" data-direction="top">
+        <div class="spy-load-more-spinner"></div>
+        <span class="spy-load-more-text">${start} anciens messages</span>
+      </div>`;
+    }
+
+    // Render messages in the chunk
+    let lastSender = start > 0 ? messages[start - 1]?.sender : null;
+    for (let i = start; i < end; i++) {
+      html += this.createMessageHtml(messages[i], i, conv, lastSender);
+      lastSender = messages[i].sender;
+    }
+
+    // Add "load newer" trigger if there are newer messages
+    if (end < messages.length) {
+      const remaining = messages.length - end;
+      html += `<div class="spy-load-more spy-load-more--bottom" data-direction="bottom">
+        <div class="spy-load-more-spinner"></div>
+        <span class="spy-load-more-text">${remaining} nouveaux messages</span>
+      </div>`;
+    }
+
+    this.chatMessagesEl.innerHTML = html;
+    this.bindMediaEvents();
+
+    console.log('SpyMessenger chunked render:', { start, end, total: messages.length });
+
+    // Set initial scroll position
+    if (isFirstVisit) {
+      const anchorIndex = this.findPreviousAnchorIndex(messages);
+      if (anchorIndex >= 0) {
+        const separatorEl = this.chatMessagesEl.querySelector(`.ms-separator[data-anchor="${this.previousAnchor}"]`);
+        if (separatorEl) {
+          separatorEl.scrollIntoView({ behavior: 'instant', block: 'start' });
+        } else {
+          this.chatMessagesEl.scrollTop = 0;
+        }
+      } else {
+        this.chatMessagesEl.scrollTop = 0;
+      }
+    } else {
+      const savedPosition = this.scrollPositions[conv.key];
+      if (savedPosition !== undefined) {
+        this.chatMessagesEl.scrollTop = savedPosition;
+      }
+    }
+
+    // Initialize scroll listener for loading more
+    this.initChunkedScrollListener();
+
+    // Initialize thinking observer
+    this.initThinkingObserver();
+  },
+
+  /**
+   * Initialize scroll listener for chunked loading
+   */
+  initChunkedScrollListener() {
+    if (!this.chatMessagesEl) return;
+
+    // Remove existing listener
+    if (this.chunkedLoading.scrollListener) {
+      this.chatMessagesEl.removeEventListener('scroll', this.chunkedLoading.scrollListener);
+    }
+
+    this.chunkedLoading.scrollListener = () => {
+      if (!this.chunkedLoading.enabled || this.chunkedLoading.isLoading) return;
+      if (this.thinking.active) return;
+
+      const el = this.chatMessagesEl;
+      const threshold = this.chunkedLoading.loadThreshold;
+      const { start, end } = this.chunkedLoading.loadedRange;
+      const total = this.chunkedLoading.totalMessages;
+
+      // Check if near top (load older)
+      if (el.scrollTop < threshold && start > 0) {
+        this.loadMoreMessages('top');
+      }
+      // Check if near bottom (load newer)
+      else if (el.scrollHeight - el.scrollTop - el.clientHeight < threshold && end < total) {
+        this.loadMoreMessages('bottom');
+      }
+    };
+
+    this.chatMessagesEl.addEventListener('scroll', this.chunkedLoading.scrollListener, { passive: true });
+  },
+
+  /**
+   * Load more messages in the specified direction
+   */
+  loadMoreMessages(direction) {
+    if (this.chunkedLoading.isLoading) return;
+    if (!this.currentConversation) return;
+
+    this.chunkedLoading.isLoading = true;
+    const messages = this.currentConversation.messages;
+    const chunkSize = this.chunkedLoading.chunkSize;
+    let { start, end } = this.chunkedLoading.loadedRange;
+
+    // Show loading state
+    const loadMoreEl = this.chatMessagesEl.querySelector(`.spy-load-more--${direction}`);
+    if (loadMoreEl) {
+      loadMoreEl.classList.add('spy-load-more--loading');
+    }
+
+    // Save scroll position reference
+    const scrollHeightBefore = this.chatMessagesEl.scrollHeight;
+    const scrollTopBefore = this.chatMessagesEl.scrollTop;
+
+    // Small delay to show the loading spinner
+    setTimeout(() => {
+      if (direction === 'top') {
+        // Load older messages
+        const newStart = Math.max(0, start - chunkSize);
+        start = newStart;
+      } else {
+        // Load newer messages
+        const newEnd = Math.min(messages.length, end + chunkSize);
+        end = newEnd;
+      }
+
+      this.chunkedLoading.loadedRange = { start, end };
+
+      // Re-render with new range
+      let html = '';
+
+      // Add "load older" trigger
+      if (start > 0) {
+        html += `<div class="spy-load-more spy-load-more--top" data-direction="top">
+          <div class="spy-load-more-spinner"></div>
+          <span class="spy-load-more-text">${start} anciens messages</span>
+        </div>`;
+      }
+
+      // Render messages
+      let lastSender = start > 0 ? messages[start - 1]?.sender : null;
+      for (let i = start; i < end; i++) {
+        html += this.createMessageHtml(messages[i], i, this.currentConversation, lastSender);
+        lastSender = messages[i].sender;
+      }
+
+      // Add "load newer" trigger
+      if (end < messages.length) {
+        const remaining = messages.length - end;
+        html += `<div class="spy-load-more spy-load-more--bottom" data-direction="bottom">
+          <div class="spy-load-more-spinner"></div>
+          <span class="spy-load-more-text">${remaining} nouveaux messages</span>
+        </div>`;
+      }
+
+      this.chatMessagesEl.innerHTML = html;
+      this.bindMediaEvents();
+
+      // Restore scroll position
+      if (direction === 'top') {
+        // Adjust scroll to keep the same content visible
+        const scrollHeightAfter = this.chatMessagesEl.scrollHeight;
+        const heightDiff = scrollHeightAfter - scrollHeightBefore;
+        this.chatMessagesEl.scrollTop = scrollTopBefore + heightDiff;
+      } else {
+        // Keep same scroll position for bottom loading
+        this.chatMessagesEl.scrollTop = scrollTopBefore;
+      }
+
+      console.log('SpyMessenger loaded more:', { direction, start, end, total: messages.length });
+
+      this.chunkedLoading.isLoading = false;
+      this.initThinkingObserver();
+    }, 150); // Small delay for visual feedback
+  },
+
+  /**
+   * Render messages with virtual scrolling (for large conversations)
+   * @param {Object} conv - The conversation object
+   * @param {Array} messages - The messages to render
+   * @param {Array} cumulativeHeights - Pre-calculated heights for virtual scrolling
+   * @param {boolean} scrollToEnd - Legacy parameter (ignored when isFirstVisit is specified)
+   * @param {boolean} isFirstVisit - If true, scroll to new content; otherwise restore position
+   */
+  renderVirtualMessages(conv, messages, cumulativeHeights, scrollToEnd = false, isFirstVisit = true) {
+    // Legacy: now using chunked loading instead
+    if (messages.length < 500) {
       this.virtualScroll.enabled = false;
       return false;
     }
 
     this.virtualScroll.enabled = true;
+
+    // For first visit, adjust visible range to show the anchor separator
+    if (isFirstVisit) {
+      const anchorIndex = this.findPreviousAnchorIndex(messages);
+      if (anchorIndex >= 0) {
+        // Set visible range to start from the anchor
+        const buffer = this.virtualScroll.buffer;
+        this.virtualScroll.visibleRange = {
+          start: Math.max(0, anchorIndex - buffer),
+          end: Math.min(messages.length, anchorIndex + 50 + buffer)
+        };
+      } else {
+        // No anchor found, start from beginning
+        const buffer = this.virtualScroll.buffer;
+        this.virtualScroll.visibleRange = {
+          start: 0,
+          end: Math.min(messages.length, 50 + buffer)
+        };
+      }
+    }
 
     const { start, end } = this.virtualScroll.visibleRange;
     const totalHeight = this.virtualScroll.totalHeight;
@@ -1370,8 +1777,44 @@ window.SpyMessenger = {
     this.chatMessagesEl.innerHTML = html;
     this.bindMediaEvents();
 
-    if (scrollToEnd) {
-      this.chatMessagesEl.scrollTop = this.chatMessagesEl.scrollHeight;
+    // Measure and cache actual heights of rendered messages
+    this.measureRenderedHeights(start, end);
+
+    // DEBUG: Log virtual scroll state
+    console.log('SpyMessenger virtual scroll debug:', {
+      visibleRange: this.virtualScroll.visibleRange,
+      totalHeight: this.virtualScroll.totalHeight,
+      topSpacerHeight: topSpacerHeight,
+      bottomSpacerHeight: bottomSpacerHeight,
+      htmlLength: html.length,
+      clientHeight: this.chatMessagesEl.clientHeight,
+      scrollHeight: this.chatMessagesEl.scrollHeight,
+      canScroll: this.chatMessagesEl.scrollHeight > this.chatMessagesEl.clientHeight,
+      childCount: this.chatMessagesEl.children.length
+    });
+
+    // Determine scroll position
+    if (isFirstVisit) {
+      const anchorIndex = this.findPreviousAnchorIndex(messages);
+      if (anchorIndex >= 0) {
+        // Find the separator element and scroll to it
+        const separatorEl = this.chatMessagesEl.querySelector(`.ms-separator[data-anchor="${this.previousAnchor}"]`);
+        if (separatorEl) {
+          separatorEl.scrollIntoView({ behavior: 'instant', block: 'start' });
+        } else {
+          this.chatMessagesEl.scrollTop = 0;
+        }
+      } else {
+        this.chatMessagesEl.scrollTop = 0;
+      }
+    } else {
+      // Not first visit: restore saved position
+      const savedPosition = this.scrollPositions[conv.key];
+      if (savedPosition !== undefined) {
+        this.chatMessagesEl.scrollTop = savedPosition;
+      } else if (scrollToEnd) {
+        this.chatMessagesEl.scrollTop = this.chatMessagesEl.scrollHeight;
+      }
     }
 
     // Initialize thinking observer after messages are rendered
@@ -1390,6 +1833,25 @@ window.SpyMessenger = {
         ? window.Translations.get('spy.separator.old')
         : 'Previous content';
       return `<div class="ms-separator" data-anchor="${msg.anchor}"><span class="ms-separator-text">${separatorText}</span></div>`;
+    }
+
+    // Handle "next content" navigation button
+    if (msg.type === 'next_content_button') {
+      const targetKey = msg.targetConversation;
+      const targetConv = this.conversations.find(c => c.key === targetKey);
+      const targetName = targetConv ? targetConv.name : targetKey;
+      const buttonText = window.Translations
+        ? window.Translations.get('spy.next_content')
+        : 'Continue to next content';
+      return `<div class="spy-next-content-button" data-target="${targetKey}">
+        <button class="spy-next-content-btn">
+          <span class="spy-next-content-text">${buttonText}</span>
+          <span class="spy-next-content-target">${this.escapeHtml(targetName)}</span>
+          <svg class="spy-next-content-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M5 12h14M12 5l7 7-7 7"/>
+          </svg>
+        </button>
+      </div>`;
     }
 
     // Handle thinking trigger (invisible element that triggers the overlay when scrolled into view)
@@ -1471,7 +1933,8 @@ window.SpyMessenger = {
         const firstEmoji = [...reaction.emoji][0] || reaction.emoji;
         return `<div class="ms-msg-reaction ms-msg-reaction--static" data-reactors="${this.escapeHtml(names)}"><div class="ms-msg-reaction-tooltip">${this.escapeHtml(names)}</div>${firstEmoji}</div>`;
       }).join('');
-      reactionsHtml = `<div class="ms-msg-reactions">${reactionElements}</div>`;
+      // Add ms-msg-reactions--visible to expand bubble immediately (no animation in SpyMessenger)
+      reactionsHtml = `<div class="ms-msg-reactions ms-msg-reactions--visible">${reactionElements}</div>`;
     }
 
     // Reactions are inside the bubble for proper positioning
@@ -1495,25 +1958,13 @@ window.SpyMessenger = {
 
   /**
    * Handle scroll event for virtual scrolling
+   * Note: Dynamic re-rendering during scroll is disabled to prevent jumpiness.
+   * We render a large enough chunk initially and let the user scroll freely.
    */
   onVirtualScroll() {
-    if (!this.virtualScroll.enabled) return;
-    if (!this.chatMessagesEl || !this.currentConversation) return;
-
-    // Don't update virtual scroll while thinking is active (scroll is locked)
-    if (this.thinking.active) return;
-
-    const messages = this.currentConversation.messages;
-    if (!messages || messages.length < 100) return;
-
-    // Debounce
-    if (this.virtualScroll.scrollTimeout) {
-      clearTimeout(this.virtualScroll.scrollTimeout);
-    }
-
-    this.virtualScroll.scrollTimeout = setTimeout(() => {
-      this.updateVirtualScroll();
-    }, 16);
+    // Disabled: dynamic re-rendering causes scroll jumps
+    // The initial render includes enough messages with large buffer
+    return;
   },
 
   /**
@@ -1537,8 +1988,67 @@ window.SpyMessenger = {
       return;
     }
 
+    // Save scroll position before re-render
+    const savedScrollTop = this.chatMessagesEl.scrollTop;
+
     this.virtualScroll.visibleRange = newRange;
-    this.renderVirtualMessages(this.currentConversation, messages, cumulativeHeights, false);
+
+    // Recalculate cumulative heights with current cached values
+    const newCumulativeHeights = this.calculateCumulativeHeights(messages);
+
+    // Pass isFirstVisit = false to prevent scroll reset
+    this.renderVirtualMessages(this.currentConversation, messages, newCumulativeHeights, false, false);
+
+    // Simply restore the scroll position - the cached heights will improve accuracy over time
+    this.chatMessagesEl.scrollTop = savedScrollTop;
+  },
+
+  /**
+   * Measure and cache actual heights of rendered messages
+   */
+  measureRenderedHeights(start, end) {
+    if (!this.chatMessagesEl) return;
+
+    // Select all message types including separators, buttons, and thinking triggers
+    const messages = this.chatMessagesEl.querySelectorAll('.ms-msg, .ms-separator, .spy-next-content-button, .spy-thinking-trigger');
+    let msgIndex = start;
+
+    messages.forEach(el => {
+      // Skip spacers
+      if (el.classList.contains('ms-virtual-spacer')) return;
+
+      // Get the actual height including margins
+      const rect = el.getBoundingClientRect();
+      const style = window.getComputedStyle(el);
+      const marginTop = parseFloat(style.marginTop) || 0;
+      const marginBottom = parseFloat(style.marginBottom) || 0;
+      const actualHeight = rect.height + marginTop + marginBottom;
+
+      // Cache the actual height
+      if (msgIndex < end && actualHeight > 0) {
+        this.virtualScroll.cachedHeights[msgIndex] = actualHeight;
+      }
+      msgIndex++;
+    });
+
+    // Note: Don't recalculate total height here during scroll updates
+    // It will be recalculated on next conversation load to keep scroll stable
+  },
+
+  /**
+   * Recalculate total height using cached actual heights where available
+   */
+  recalculateTotalHeight() {
+    if (!this.currentConversation || !this.currentConversation.messages) return;
+
+    const messages = this.currentConversation.messages;
+    let total = 0;
+
+    for (let i = 0; i < messages.length; i++) {
+      total += this.estimateMessageHeight(messages[i], i);
+    }
+
+    this.virtualScroll.totalHeight = total;
   },
 
   /**
@@ -1557,6 +2067,11 @@ window.SpyMessenger = {
     // Separators have minimal height
     if (msg.type === 'separator') {
       return 40;
+    }
+
+    // Next content button has a fixed height
+    if (msg.type === 'next_content_button') {
+      return 80;
     }
 
     const heights = this.virtualScroll.estimatedHeights;
@@ -1751,6 +2266,18 @@ window.SpyMessenger = {
       img.addEventListener('click', () => {
         this.openLightbox(img.src, 'avatar');
       });
+    });
+
+    // "Next content" navigation buttons - click to go to next conversation
+    const nextContentBtns = this.chatMessagesEl.querySelectorAll('.spy-next-content-button');
+    nextContentBtns.forEach(container => {
+      const btn = container.querySelector('.spy-next-content-btn');
+      const targetKey = container.dataset.target;
+      if (btn && targetKey) {
+        btn.addEventListener('click', () => {
+          this.navigateToNextContent(targetKey);
+        });
+      }
     });
   },
 

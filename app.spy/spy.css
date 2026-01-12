@@ -191,8 +191,16 @@
 /* ===== SPY CONTENT AREA ===== */
 .spy-content {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
+}
+
+/* For Messenger: disable parent scroll, let ms-chat-messages handle scrolling */
+#spyMessengerContent {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 /* ===== SPY MODE ADJUSTMENTS FOR MESSENGER ===== */
@@ -218,7 +226,8 @@
 /* Uses same CSS as MC's Messenger (ms-*) */
 .spy-messenger-app {
   width: 100%;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   color: #e5e7eb;
@@ -236,7 +245,6 @@
   display: flex;
   gap: 8px;
   min-height: 0;
-  height: 100%;
   padding: 8px;
 }
 
@@ -245,7 +253,17 @@
 }
 
 .spy-messenger-app .ms-chat {
-  height: 100%;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.spy-messenger-app .ms-chat-messages {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 /* Ensure contacts list has proper layout */
@@ -597,4 +615,106 @@
 
 .spy-thinking-action--next:hover {
   background: rgba(255, 255, 255, 0.15);
+}
+
+/* ===== SPY NEXT CONTENT BUTTON ===== */
+/* Navigation button to continue to next conversation */
+.spy-next-content-button {
+  display: flex;
+  justify-content: center;
+  padding: 20px 16px;
+  margin: 16px 0;
+}
+
+.spy-next-content-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 24px;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(147, 51, 234, 0.2) 100%);
+  border: 1px solid rgba(147, 51, 234, 0.4);
+  border-radius: 16px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: #ffffff;
+  min-width: 200px;
+}
+
+.spy-next-content-btn:hover {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.35) 0%, rgba(147, 51, 234, 0.35) 100%);
+  border-color: rgba(147, 51, 234, 0.6);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 20px rgba(147, 51, 234, 0.3);
+}
+
+.spy-next-content-btn:active {
+  transform: translateY(0);
+}
+
+.spy-next-content-text {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.7);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.spy-next-content-target {
+  font-size: 15px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.spy-next-content-arrow {
+  width: 20px;
+  height: 20px;
+  color: rgba(255, 255, 255, 0.6);
+  margin-top: 4px;
+}
+
+/* ===== CHUNKED LOADING INDICATORS ===== */
+.spy-load-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 16px 12px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.03) 0%, transparent 100%);
+  border-radius: 8px;
+  margin: 8px 12px;
+}
+
+.spy-load-more--top {
+  background: linear-gradient(180deg, transparent 0%, rgba(255,255,255,0.03) 100%);
+}
+
+.spy-load-more--bottom {
+  background: linear-gradient(0deg, transparent 0%, rgba(255,255,255,0.03) 100%);
+}
+
+.spy-load-more-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  border-top-color: rgba(255, 255, 255, 0.5);
+  border-radius: 50%;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.spy-load-more--loading .spy-load-more-spinner {
+  opacity: 1;
+  animation: spy-spinner-rotate 0.8s linear infinite;
+}
+
+@keyframes spy-spinner-rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.spy-load-more-text {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.4);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }

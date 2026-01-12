@@ -1297,3 +1297,24 @@
   opacity: 1;
   transform: scale(1);
 }
+
+/* ===== VIRTUAL SCROLL ===== */
+
+/* Sentinel elements for IntersectionObserver - invisible trigger zones */
+.ms-sentinel {
+  height: 1px;
+  width: 100%;
+  pointer-events: none;
+  visibility: hidden;
+}
+
+/* Spacer elements for virtualization */
+.ms-virtual-spacer {
+  width: 100%;
+  flex-shrink: 0;
+}
+
+.ms-virtual-spacer--top,
+.ms-virtual-spacer--bottom {
+  background: transparent;
+}

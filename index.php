@@ -361,6 +361,142 @@ function v($path) {
     <span class="volume-slider-value" id="volumeSliderValue">100%</span>
   </div>
 
+  <!-- Debug Console Panel -->
+  <div class="debug-console" id="debugConsole">
+    <div class="debug-console-header">
+      <span class="debug-console-title">Console</span>
+      <div class="debug-console-actions">
+        <button class="debug-console-btn" id="debugCopyBtn" title="Copy">Copy</button>
+        <button class="debug-console-btn" id="debugClearBtn" title="Clear">Clear</button>
+      </div>
+    </div>
+    <div class="debug-console-content" id="debugConsoleContent"></div>
+  </div>
+  <style>
+    .debug-console {
+      position: fixed;
+      right: 20px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 400px;
+      max-height: 600px;
+      background: #1e1e1e;
+      border: 1px solid #333;
+      border-radius: 8px;
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 12px;
+      color: #d4d4d4;
+      z-index: 99999;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    }
+    .debug-console-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 12px;
+      background: #2d2d2d;
+      border-bottom: 1px solid #333;
+      border-radius: 8px 8px 0 0;
+    }
+    .debug-console-title {
+      font-weight: 600;
+      color: #fff;
+    }
+    .debug-console-actions {
+      display: flex;
+      gap: 8px;
+    }
+    .debug-console-btn {
+      padding: 4px 10px;
+      background: #0e639c;
+      border: none;
+      border-radius: 4px;
+      color: #fff;
+      cursor: pointer;
+      font-size: 11px;
+    }
+    .debug-console-btn:hover {
+      background: #1177bb;
+    }
+    .debug-console-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px 12px;
+      max-height: 500px;
+    }
+    .debug-log-entry {
+      padding: 4px 0;
+      border-bottom: 1px solid #2a2a2a;
+      word-break: break-all;
+      white-space: pre-wrap;
+    }
+    .debug-log-entry:last-child {
+      border-bottom: none;
+    }
+    .debug-log-entry.log { color: #d4d4d4; }
+    .debug-log-entry.warn { color: #cca700; }
+    .debug-log-entry.error { color: #f14c4c; }
+    .debug-log-entry.info { color: #3794ff; }
+    @media (max-width: 1200px) {
+      .debug-console { display: none; }
+    }
+  </style>
+  <script>
+    (function() {
+      const consoleContent = document.getElementById('debugConsoleContent');
+      const copyBtn = document.getElementById('debugCopyBtn');
+      const clearBtn = document.getElementById('debugClearBtn');
+      let logs = [];
+
+      function formatValue(val) {
+        if (val === null) return 'null';
+        if (val === undefined) return 'undefined';
+        if (typeof val === 'object') {
+          try {
+            return JSON.stringify(val, null, 2);
+          } catch (e) {
+            return String(val);
+          }
+        }
+        return String(val);
+      }
+
+      function addLog(type, args) {
+        const entry = document.createElement('div');
+        entry.className = 'debug-log-entry ' + type;
+        const text = Array.from(args).map(formatValue).join(' ');
+        entry.textContent = text;
+        logs.push('[' + type.toUpperCase() + '] ' + text);
+        consoleContent.appendChild(entry);
+        consoleContent.scrollTop = consoleContent.scrollHeight;
+      }
+
+      const origLog = console.log;
+      const origWarn = console.warn;
+      const origError = console.error;
+      const origInfo = console.info;
+
+      console.log = function() { origLog.apply(console, arguments); addLog('log', arguments); };
+      console.warn = function() { origWarn.apply(console, arguments); addLog('warn', arguments); };
+      console.error = function() { origError.apply(console, arguments); addLog('error', arguments); };
+      console.info = function() { origInfo.apply(console, arguments); addLog('info', arguments); };
+
+      copyBtn.addEventListener('click', function() {
+        navigator.clipboard.writeText(logs.join('\n')).then(function() {
+          copyBtn.textContent = 'Copied!';
+          setTimeout(function() { copyBtn.textContent = 'Copy'; }, 1500);
+        });
+      });
+
+      clearBtn.addEventListener('click', function() {
+        consoleContent.innerHTML = '';
+        logs = [];
+      });
+    })();
+  </script>
+
   <!-- Character name customization modal (girlfriend + player) -->
   <div class="character-name-modal hidden" id="characterNameModal">
     <div class="character-name-modal-backdrop"></div>
