@@ -359,10 +359,11 @@ function initApp() {
       window.MusicPlayer.play();
     }
 
-    // Note: Spy app state is NOT restored from localStorage on page load.
-    // The anchor and unlocks are recalculated when Messenger parses conversations.
-    // This ensures consistency between MC's progression and SpyApp content.
-    // Spy state is only restored when loading a save via SavesLoad.
+    // Restore spy anchor from localStorage to maintain consistency after page reload
+    // This ensures SpyApp content matches what was previously unlocked
+    if (typeof window.restoreSpyAnchor === 'function') {
+      window.restoreSpyAnchor();
+    }
   }
 
   async function handleStorySelection(story) {

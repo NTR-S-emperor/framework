@@ -772,6 +772,13 @@ window.Messenger = {
 
     // If it's a "spy_unlock" message, unlock the Spy app
     if (scriptMsg.kind === "spy_unlock") {
+      // Record in action history for goBack support
+      if (!Array.isArray(conv.actionHistory)) conv.actionHistory = [];
+      conv.actionHistory.push({
+        type: 'spy_unlock',
+        previousScriptIndex: conv.scriptIndex
+      });
+
       if (typeof window.unlockSpyApp === 'function') {
         window.unlockSpyApp();
       }
@@ -790,6 +797,14 @@ window.Messenger = {
 
     // If it's a "spy_anchor" message, update the spy anchor level
     if (scriptMsg.kind === "spy_anchor") {
+      // Record in action history for goBack support
+      if (!Array.isArray(conv.actionHistory)) conv.actionHistory = [];
+      conv.actionHistory.push({
+        type: 'spy_anchor',
+        previousScriptIndex: conv.scriptIndex,
+        previousAnchor: window.currentSpyAnchor || 0
+      });
+
       if (typeof window.setSpyAnchor === 'function') {
         window.setSpyAnchor(scriptMsg.anchor);
       }
@@ -808,6 +823,13 @@ window.Messenger = {
 
     // If it's a "spy_unlock_instapics" message, unlock InstaPics on GF's phone
     if (scriptMsg.kind === "spy_unlock_instapics") {
+      // Record in action history for goBack support
+      if (!Array.isArray(conv.actionHistory)) conv.actionHistory = [];
+      conv.actionHistory.push({
+        type: 'spy_unlock_instapics',
+        previousScriptIndex: conv.scriptIndex
+      });
+
       if (typeof window.unlockSpyInstapicsApp === 'function') {
         window.unlockSpyInstapicsApp();
       }
@@ -826,6 +848,13 @@ window.Messenger = {
 
     // If it's a "spy_unlock_onlyslut" message, unlock OnlySlut on GF's phone
     if (scriptMsg.kind === "spy_unlock_onlyslut") {
+      // Record in action history for goBack support
+      if (!Array.isArray(conv.actionHistory)) conv.actionHistory = [];
+      conv.actionHistory.push({
+        type: 'spy_unlock_onlyslut',
+        previousScriptIndex: conv.scriptIndex
+      });
+
       if (typeof window.unlockSpyOnlyslutApp === 'function') {
         window.unlockSpyOnlyslutApp();
       }
@@ -4345,6 +4374,54 @@ window.Messenger = {
 
       // Lock doesn't add a message, so no pop on playedMessages
       this.renderContacts();
+      this.renderConversation();
+      return;
+    }
+
+    // Special case: canceling spy_unlock
+    if (lastAction.type === 'spy_unlock') {
+      // Re-lock the Spy app
+      if (typeof window.resetSpyAppState === 'function') {
+        window.resetSpyAppState();
+      }
+      // Restore script index
+      conv.scriptIndex = lastAction.previousScriptIndex;
+      this.renderConversation();
+      return;
+    }
+
+    // Special case: canceling spy_anchor
+    if (lastAction.type === 'spy_anchor') {
+      // Restore previous anchor value
+      if (typeof window.forceSpyAnchor === 'function') {
+        window.forceSpyAnchor(lastAction.previousAnchor);
+      }
+      // Restore script index
+      conv.scriptIndex = lastAction.previousScriptIndex;
+      this.renderConversation();
+      return;
+    }
+
+    // Special case: canceling spy_unlock_instapics
+    if (lastAction.type === 'spy_unlock_instapics') {
+      // Re-lock SpyInstaPics app
+      if (typeof window.lockSpyInstapicsApp === 'function') {
+        window.lockSpyInstapicsApp();
+      }
+      // Restore script index
+      conv.scriptIndex = lastAction.previousScriptIndex;
+      this.renderConversation();
+      return;
+    }
+
+    // Special case: canceling spy_unlock_onlyslut
+    if (lastAction.type === 'spy_unlock_onlyslut') {
+      // Re-lock SpyOnlySlut app
+      if (typeof window.lockSpyOnlyslutApp === 'function') {
+        window.lockSpyOnlyslutApp();
+      }
+      // Restore script index
+      conv.scriptIndex = lastAction.previousScriptIndex;
       this.renderConversation();
       return;
     }

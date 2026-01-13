@@ -225,6 +225,7 @@
 @notif.spy.onlyslut: EN= New app detected: OnlySlut | FR= Nouvelle application détectée : OnlySlut
 @spy.separator.old: EN= Previous content | FR= Contenu précédent
 @spy.next_content: EN= Continue to next content | FR= Passer au contenu suivant
+@spy.end_content: EN= End of intercepted content | FR= Fin du nouveau contenu intercepté
 
 
 # ============================================================================

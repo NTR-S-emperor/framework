@@ -70,6 +70,28 @@ window.unlockSpyOnlyslutApp = function() {
 };
 
 /**
+ * Lock SpyInstaPics app (called on goBack)
+ */
+window.lockSpyInstapicsApp = function() {
+  window.spyAppsUnlocked.instapics = false;
+  // Mark for reload
+  if (window.SpyInstaPics) {
+    window.SpyInstaPics.dataLoaded = false;
+  }
+};
+
+/**
+ * Lock SpyOnlySlut app (called on goBack)
+ */
+window.lockSpyOnlyslutApp = function() {
+  window.spyAppsUnlocked.onlyslut = false;
+  // Mark for reload
+  if (window.SpyOnlySlut) {
+    window.SpyOnlySlut.dataLoaded = false;
+  }
+};
+
+/**
  * Check if SpyInstaPics app is unlocked
  */
 window.isSpyInstapicsUnlocked = function() {
@@ -121,6 +143,46 @@ window.setSpyAnchor = function(anchor) {
       data[slug] = anchor;
       localStorage.setItem('studioSpyAnchor', JSON.stringify(data));
     } catch (e) {}
+
+    // Mark SpyMessenger for reload so new content is visible
+    if (window.SpyMessenger) {
+      window.SpyMessenger.dataLoaded = false;
+    }
+    if (window.SpyInstaPics) {
+      window.SpyInstaPics.dataLoaded = false;
+    }
+    if (window.SpyOnlySlut) {
+      window.SpyOnlySlut.dataLoaded = false;
+    }
+  }
+};
+
+/**
+ * Force set the spy anchor level to any value (used by goBack)
+ * Also marks SpyMessenger for reload so content reflects the new anchor
+ */
+window.forceSpyAnchor = function(anchor) {
+  const slug = window.currentStorySlug || 'default';
+  window.currentSpyAnchor = anchor;
+
+  // Save to localStorage
+  try {
+    const saved = localStorage.getItem('studioSpyAnchor') || '{}';
+    const data = JSON.parse(saved);
+    data[slug] = anchor;
+    localStorage.setItem('studioSpyAnchor', JSON.stringify(data));
+  } catch (e) {}
+
+  // Mark SpyMessenger as needing reload (will reload when Spy app opens)
+  if (window.SpyMessenger) {
+    window.SpyMessenger.dataLoaded = false;
+  }
+  // Also mark SpyInstaPics and SpyOnlySlut for reload
+  if (window.SpyInstaPics) {
+    window.SpyInstaPics.dataLoaded = false;
+  }
+  if (window.SpyOnlySlut) {
+    window.SpyOnlySlut.dataLoaded = false;
   }
 };
 
@@ -181,6 +243,16 @@ window.resetSpyAppState = function() {
   if (spyBtn) {
     spyBtn.classList.add('hidden');
   }
+  // Mark all spy data as needing reload
+  if (window.SpyMessenger) {
+    window.SpyMessenger.dataLoaded = false;
+  }
+  if (window.SpyInstaPics) {
+    window.SpyInstaPics.dataLoaded = false;
+  }
+  if (window.SpyOnlySlut) {
+    window.SpyOnlySlut.dataLoaded = false;
+  }
 };
 
 /**
@@ -233,9 +305,28 @@ window.Spy = {
 
     this.initDOM();
 
+    // Sync anchor from localStorage to ensure we have the latest value
+    // (goBack in MC Messenger updates localStorage via forceSpyAnchor)
+    const slug = window.currentStorySlug || 'default';
+    try {
+      const saved = localStorage.getItem('studioSpyAnchor');
+      if (saved) {
+        const data = JSON.parse(saved);
+        window.currentSpyAnchor = data[slug] || 0;
+      }
+    } catch (e) {}
+
     // Preload messenger data to unlock posts for InstaPics/OnlySlut
+    // Always force reload to ensure data matches current anchor
     if (window.SpyMessenger) {
+      window.SpyMessenger.dataLoaded = false;
       await window.SpyMessenger.preloadData(this.storyPath + '/spy/messenger', this.gfKey);
+    }
+    if (window.SpyInstaPics) {
+      window.SpyInstaPics.dataLoaded = false;
+    }
+    if (window.SpyOnlySlut) {
+      window.SpyOnlySlut.dataLoaded = false;
     }
 
     this.showHomeScreen();
@@ -655,8 +746,9 @@ window.SpyMessenger = {
     this.fileSequence = [];
     this.navigationTargets = {};
     this.previousAnchor = Math.max(0, (window.getSpyAnchor ? window.getSpyAnchor() : 0) - 1);
-    // Note: scrollPositions and hasVisitedInSession are NOT reset here
-    // They persist across app switches but reset on page reload naturally
+    // Reset visit tracking so we scroll to new content when anchor changes
+    this.hasVisitedInSession = {};
+    this.scrollPositions = {};
 
     await this.loadCharacters();
     await this.loadConversationsFromStart();
@@ -779,7 +871,8 @@ window.SpyMessenger = {
    * Supports groups (comma-separated names) and media ($pics, $vids, $audio)
    */
   async loadConversationsFromStart() {
-    const filesToParse = ['start.txt'];
+    // Track files with their associated anchor (files linked after an anchor inherit that anchor)
+    const filesToParse = [{ filename: 'start.txt', linkedAfterAnchor: 0 }];
     const currentAnchor = window.getSpyAnchor ? window.getSpyAnchor() : 0;
     let fileIndex = 0;
     let stopParsing = false;
@@ -791,7 +884,16 @@ window.SpyMessenger = {
     }
 
     while (fileIndex < filesToParse.length && !stopParsing) {
-      const filename = filesToParse[fileIndex];
+      const fileEntry = filesToParse[fileIndex];
+      const filename = fileEntry.filename;
+      const linkedAfterAnchor = fileEntry.linkedAfterAnchor || 0;
+
+      // Skip files linked after an anchor that we haven't reached yet
+      // If a file is linked after $spy_anchor_N, it requires currentAnchor > N to be visible
+      if (linkedAfterAnchor > 0 && linkedAfterAnchor >= currentAnchor) {
+        fileIndex++;
+        continue;
+      }
 
       if (this.parsedFiles.includes(filename)) {
         fileIndex++;
@@ -852,7 +954,8 @@ window.SpyMessenger = {
               i = 1; // Start parsing from line 2
 
               // Initialize conversation if needed
-              if (!this.conversationsByKey[contactKey]) {
+              const isNewConversation = !this.conversationsByKey[contactKey];
+              if (isNewConversation) {
                 // Build participant colors map (same as MC)
                 const participantColors = {};
                 participants.forEach((key, i) => {
@@ -864,12 +967,30 @@ window.SpyMessenger = {
                   lastActivity: Date.now() - (1000 * fileIndex),
                   isGroup: isGroup,
                   participants: participants,
-                  participantColors: participantColors
+                  participantColors: participantColors,
+                  lastSeparatorAnchor: 0 // Track last separator to avoid duplicates
                 };
+              }
+
+              // If this file was linked after an anchor, add a separator
+              // to indicate this content is from a previous anchor
+              // Only add if we haven't already added a separator for this anchor
+              if (linkedAfterAnchor > 0 && this.conversationsByKey[contactKey]) {
+                const conv = this.conversationsByKey[contactKey];
+                if ((conv.lastSeparatorAnchor || 0) < linkedAfterAnchor) {
+                  conv.messages.push({
+                    type: 'separator',
+                    anchor: linkedAfterAnchor
+                  });
+                  conv.lastSeparatorAnchor = linkedAfterAnchor;
+                }
               }
             }
           }
         }
+
+        // Track the last anchor encountered in this file (for $talks that come after it)
+        let lastAnchorInFile = linkedAfterAnchor;
 
         // Parse messages
         while (i < lines.length) {
@@ -879,32 +1000,55 @@ window.SpyMessenger = {
 
           if (!trimmed) continue;
 
-          // Check for $spy_anchor_X - stop if anchor >= currentAnchor
+          // Helper to check if file is already in queue
+          const isFileInQueue = (file) => filesToParse.some(entry => entry.filename === file);
+
+          // Check for $talks = filename.txt - add to files to parse
+          // IMPORTANT: Check this BEFORE anchor to ensure $talks after an anchor is still processed
+          const talksMatch = trimmed.match(/^\$talks\s*=\s*(.+)$/i);
+          if (talksMatch) {
+            const nextFile = talksMatch[1].trim();
+            if (!isFileInQueue(nextFile) && !this.parsedFiles.includes(nextFile)) {
+              filesToParse.push({ filename: nextFile, linkedAfterAnchor: lastAnchorInFile });
+            }
+            continue;
+          }
+
+          // Check for $spy_anchor_X - stop adding messages if anchor >= currentAnchor
           // Content after $spy_anchor_N requires MC to have called $spy_anchor_N+1
           const anchorMatch = trimmed.match(/^\$spy_anchor[_\s]*(\d+)$/i);
           if (anchorMatch) {
             const anchor = parseInt(anchorMatch[1], 10);
+            // Update the last anchor encountered
+            lastAnchorInFile = anchor;
+
             if (anchor >= currentAnchor) {
-              stopParsing = true;
+              // Stop adding messages but continue reading to find $talks
+              // These files are linked AFTER this anchor, so they inherit it
+              while (i < lines.length) {
+                const remainingLine = lines[i].trim();
+                i++;
+                const remainingTalksMatch = remainingLine.match(/^\$talks\s*=\s*(.+)$/i);
+                if (remainingTalksMatch) {
+                  const nextFile = remainingTalksMatch[1].trim();
+                  if (!isFileInQueue(nextFile) && !this.parsedFiles.includes(nextFile)) {
+                    filesToParse.push({ filename: nextFile, linkedAfterAnchor: anchor });
+                  }
+                }
+              }
               break;
             }
             // Add a separator to mark the boundary between anchor sections
             // This helps users see where "old content" begins when scrolling up
             if (contactKey && this.conversationsByKey[contactKey]) {
-              this.conversationsByKey[contactKey].messages.push({
-                type: 'separator',
-                anchor: anchor
-              });
-            }
-            continue;
-          }
-
-          // Check for $talks = filename.txt - add to files to parse
-          const talksMatch = trimmed.match(/^\$talks\s*=\s*(.+)$/i);
-          if (talksMatch) {
-            const nextFile = talksMatch[1].trim();
-            if (!filesToParse.includes(nextFile) && !this.parsedFiles.includes(nextFile)) {
-              filesToParse.push(nextFile);
+              const conv = this.conversationsByKey[contactKey];
+              if ((conv.lastSeparatorAnchor || 0) < anchor) {
+                conv.messages.push({
+                  type: 'separator',
+                  anchor: anchor
+                });
+                conv.lastSeparatorAnchor = anchor;
+              }
             }
             continue;
           }
@@ -1160,15 +1304,34 @@ window.SpyMessenger = {
       }
     }
 
+    // Identify the LAST conversation in fileSequence (the true final one)
+    let finalConversationKey = null;
+    if (this.fileSequence.length > 0) {
+      finalConversationKey = this.fileSequence[this.fileSequence.length - 1].contactKey;
+    }
+
     // Add navigation buttons to conversations that have a next conversation
+    // BUT skip adding next_content_button to the final conversation
     for (const key of Object.keys(this.navigationTargets)) {
+      if (key === finalConversationKey) {
+        continue;
+      }
       const conv = this.conversationsByKey[key];
       const target = this.navigationTargets[key];
       if (conv && target.nextConversation) {
-        // Add a navigation marker at the end of the conversation
         conv.messages.push({
           type: 'next_content_button',
           targetConversation: target.nextConversation
+        });
+      }
+    }
+
+    // Add "end of content" marker to the final conversation
+    if (finalConversationKey) {
+      const finalConv = this.conversationsByKey[finalConversationKey];
+      if (finalConv) {
+        finalConv.messages.push({
+          type: 'end_content_marker'
         });
       }
     }
@@ -1815,6 +1978,22 @@ window.SpyMessenger = {
       </div>`;
     }
 
+    // Handle "end of content" marker (no more content to navigate to)
+    if (msg.type === 'end_content_marker') {
+      const endText = window.Translations
+        ? window.Translations.get('spy.end_content')
+        : 'End of intercepted content';
+      return `<div class="spy-end-content-marker">
+        <div class="spy-end-content-box">
+          <svg class="spy-end-content-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M9 12l2 2 4-4"/>
+            <circle cx="12" cy="12" r="10"/>
+          </svg>
+          <span class="spy-end-content-text">${endText}</span>
+        </div>
+      </div>`;
+    }
+
     // Handle thinking trigger (invisible element that triggers the overlay when scrolled into view)
     if (msg.kind === 'thinking') {
       const blocksData = encodeURIComponent(JSON.stringify(msg.blocks));
@@ -2032,6 +2211,11 @@ window.SpyMessenger = {
 
     // Next content button has a fixed height
     if (msg.type === 'next_content_button') {
+      return 56;
+    }
+
+    // End content marker has a fixed height
+    if (msg.type === 'end_content_marker') {
       return 56;
     }
 
