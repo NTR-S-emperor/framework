@@ -608,6 +608,17 @@ window.Messenger = {
         ? scriptMessages[conv.scriptIndex]
         : null;
 
+    // Skip fake choices that belong to a different path than the one selected
+    while (conv.nextChoiceIdx < fakeChoices.length) {
+      const candidate = fakeChoices[conv.nextChoiceIdx];
+      // If this fake choice belongs to a specific path and it's not the selected one, skip it
+      if (candidate.pathLabel && candidate.pathLabel !== conv.selectedPath) {
+        conv.nextChoiceIdx++;
+        continue;
+      }
+      break;
+    }
+
     const nextChoice =
       conv.nextChoiceIdx < fakeChoices.length
         ? fakeChoices[conv.nextChoiceIdx]
@@ -1979,6 +1990,9 @@ window.Messenger = {
 
     let i = 0;
 
+    // Track current path context for fake/real choices
+    let currentPathLabel = null;
+
     // Group info (if it's a group conversation)
     let isGroup = false;
     let groupParticipants = []; // list of participant keys
@@ -2030,7 +2044,8 @@ window.Messenger = {
         const block = {
           filename: filename,
           options: [],
-          afterIndex: rawMessages.length
+          afterIndex: rawMessages.length,
+          pathLabel: currentPathLabel
         };
 
         let currentChoiceLines = [];
@@ -2360,9 +2375,10 @@ window.Messenger = {
         flushCurrentMessage();
         const pathMatch = trimmed.match(/^path\s+(\w+)$/i);
         if (pathMatch) {
+          currentPathLabel = pathMatch[1].toUpperCase();
           rawMessages.push({
             kind: "pathStart",
-            pathLabel: pathMatch[1].toUpperCase()
+            pathLabel: currentPathLabel
           });
         }
         i++;
@@ -2372,6 +2388,7 @@ window.Messenger = {
       // --- PATH end marker ---
       if (/^end\s*path$/i.test(trimmed)) {
         flushCurrentMessage();
+        currentPathLabel = null;
         rawMessages.push({
           kind: "pathEnd"
         });
@@ -2873,7 +2890,9 @@ window.Messenger = {
             filename: block.filename,
             options: block.options,
             // exact position in the message list
-            messageIndex: baseIndex + (typeof block.afterIndex === "number" ? block.afterIndex : 0)
+            messageIndex: baseIndex + (typeof block.afterIndex === "number" ? block.afterIndex : 0),
+            // path context (null if not inside a path block)
+            pathLabel: block.pathLabel || null
           });
         }
       }
@@ -2998,6 +3017,16 @@ window.Messenger = {
 
     // Replay up to target index
     while (conv.scriptIndex < targetScriptIndex) {
+      // Skip fake choices that belong to a different path than the one selected
+      while (conv.nextChoiceIdx < fakeChoices.length) {
+        const candidate = fakeChoices[conv.nextChoiceIdx];
+        if (candidate.pathLabel && candidate.pathLabel !== conv.selectedPath) {
+          conv.nextChoiceIdx++;
+          continue;
+        }
+        break;
+      }
+
       // Check if there's a fake choice at this point
       const nextChoice = fakeChoices[conv.nextChoiceIdx];
       if (nextChoice && conv.scriptIndex >= nextChoice.messageIndex) {
