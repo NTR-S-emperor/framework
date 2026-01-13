@@ -572,9 +572,9 @@ window.InstaPics = {
                 }
             } else {
                 // Possible forms:
-                //   Robert 3 = C'est vrai !
-                //   Osman 0 "comments.replied" = Non …
-                //   Naruto 2 "replied.replied" = Tg
+                //   Robert 3 = That's true!
+                //   Osman 0 "comments.replied" = No...
+                //   Naruto 2 "replied.replied" = Shut up
                 const match = line.match(/^(.+?)(?:\s+(\d+))?(?:\s+"(comments\.replied|replied\.replied)")?\s*=\s*(.+)$/);
                 if (!match) continue;
 

@@ -1,8 +1,8 @@
 // ===========================================
-// RECHERCHE GLOBALE - Index de toutes les commandes
+// GLOBAL SEARCH - Index of all commands
 // ===========================================
 (function() {
-    // Index global de toutes les commandes du framework
+    // Global index of all framework commands
     var searchIndex = [
         // Messenger - Variables
         { term: '$mc', description: 'MC\'s custom name variable', page: 'messenger.html', anchor: '#commands' },

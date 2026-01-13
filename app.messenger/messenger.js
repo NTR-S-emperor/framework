@@ -2076,7 +2076,7 @@ window.Messenger = {
             }
           } else {
             if (t.length === 0 && !currentChoiceLines.length) {
-              // ignore lignes vides en tête
+              // ignore empty lines at the beginning
             } else {
               currentChoiceLines.push(line);
             }
