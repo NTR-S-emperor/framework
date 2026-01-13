@@ -14,7 +14,8 @@ window.Settings = {
         doubleplaySpeed: 500,   // ms between each message in very fast mode (100-1000)
         autoplaySpeed: 1500,    // ms between each message in auto mode (500-5000)
         wallpaper: 'default',
-        autoExpandMedia: true   // Automatically open images/videos in lightbox when received
+        autoExpandMedia: true,  // Automatically open images/videos in lightbox when received
+        showChoiceHints: true   // Show hints on story choices when available
     },
 
     // Current values (loaded from localStorage)
@@ -220,6 +221,20 @@ window.Settings = {
                         <div class="settings-item-control">
                             <label class="settings-checkbox">
                                 <input type="checkbox" id="settings-auto-expand-media">
+                                <span class="settings-checkbox-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Show choice hints -->
+                    <div class="settings-item">
+                        <div class="settings-item-label">
+                            <span class="settings-item-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></span>
+                            <span data-i18n="settings.choicehints">Choice hints</span>
+                        </div>
+                        <div class="settings-item-control">
+                            <label class="settings-checkbox">
+                                <input type="checkbox" id="settings-show-choice-hints">
                                 <span class="settings-checkbox-slider"></span>
                             </label>
                         </div>
@@ -451,6 +466,12 @@ window.Settings = {
         if (autoExpandCheckbox) {
             autoExpandCheckbox.checked = this.get('autoExpandMedia');
         }
+
+        // Show choice hints checkbox
+        const choiceHintsCheckbox = this.root.querySelector('#settings-show-choice-hints');
+        if (choiceHintsCheckbox) {
+            choiceHintsCheckbox.checked = this.get('showChoiceHints');
+        }
     },
 
     /**
@@ -553,6 +574,14 @@ window.Settings = {
         if (autoExpandCheckbox) {
             autoExpandCheckbox.addEventListener('change', (e) => {
                 this.set('autoExpandMedia', e.target.checked);
+            });
+        }
+
+        // Show choice hints checkbox
+        const choiceHintsCheckbox = this.root.querySelector('#settings-show-choice-hints');
+        if (choiceHintsCheckbox) {
+            choiceHintsCheckbox.addEventListener('change', (e) => {
+                this.set('showChoiceHints', e.target.checked);
             });
         }
 

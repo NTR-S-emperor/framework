@@ -2221,8 +2221,12 @@ window.Messenger = {
           const line = lines[i];
           const t = line.trim();
 
+          // Check if line starts with a choice label (A., B., etc.) - if so, it's NOT a speaker line
+          const isChoiceLabel = /^\s*[A-Z]\.\s*/i.test(line);
+
           // Check if this is a new dialogue line (end of choice block)
-          const speakerMatch = line.match(/^([^:]+)\s*:(.*)$/);
+          // But NOT if it's a choice label (which might contain : in hints like {$red:text})
+          const speakerMatch = !isChoiceLabel && line.match(/^([^:]+)\s*:(.*)$/);
           if (speakerMatch) {
             // Flush the current choice in progress
             if (currentLabel && currentChoiceLines.length) {
@@ -2308,6 +2312,34 @@ window.Messenger = {
         if (currentLabel && currentChoiceLines.length) {
           const joined = currentChoiceLines.join("\n").trim();
           if (joined) block.options.push({ label: currentLabel, text: joined });
+        }
+
+        // Extract hints from choice text: {hint} or {$color:hint}
+        for (let j = 0; j < block.options.length; j++) {
+          const opt = block.options[j];
+          const text = opt.text;
+
+          // Look for {$color:hint} or {hint} at the end
+          const hintMatch = text.match(/\{\$([a-zA-Z]+):([^}]+)\}\s*$/);
+          const simpleHintMatch = !hintMatch && text.match(/\{([^$}][^}]*)\}\s*$/);
+
+          if (hintMatch) {
+            // {$color:hint} format
+            block.options[j] = {
+              label: opt.label,
+              text: text.replace(/\{[^}]+\}\s*$/, '').trim(),
+              hint: hintMatch[2].trim(),
+              hintColor: hintMatch[1]
+            };
+          } else if (simpleHintMatch) {
+            // {hint} format (no color)
+            block.options[j] = {
+              label: opt.label,
+              text: text.replace(/\{[^}]+\}\s*$/, '').trim(),
+              hint: simpleHintMatch[1].trim(),
+              hintColor: null
+            };
+          }
         }
 
         if (block.options.length) {
@@ -3587,11 +3619,56 @@ window.Messenger = {
       // Add special class for real choices
       listEl.classList.add("ms-choice-list--real");
 
+      // Check if hints should be shown (default: true)
+      const showHints = window.Settings?.get('showChoiceHints') !== false;
+
       options.forEach((opt) => {
         const btn = document.createElement("button");
         btn.type = "button";
         btn.className = "ms-choice ms-choice--real";
-        btn.textContent = opt.text; // Display only text, not label
+
+        // Create text span
+        const textSpan = document.createElement("span");
+        textSpan.className = "ms-choice-text";
+        textSpan.textContent = opt.text;
+        btn.appendChild(textSpan);
+
+        // Add hint if present and setting is enabled
+        if (opt.hint && showHints) {
+          const hintSpan = document.createElement("span");
+          hintSpan.className = "ms-choice-hint";
+          hintSpan.textContent = opt.hint;
+
+          // Apply color as background gradient if specified
+          if (opt.hintColor) {
+            const gradientMap = {
+              red: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+              green: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
+              blue: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+              yellow: 'linear-gradient(135deg, #eab308 0%, #ca8a04 100%)',
+              orange: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
+              purple: 'linear-gradient(135deg, #a855f7 0%, #9333ea 100%)',
+              pink: 'linear-gradient(135deg, #ec4899 0%, #db2777 100%)',
+              cyan: 'linear-gradient(135deg, #06b6d4 0%, #0891b2 100%)',
+              white: 'linear-gradient(135deg, #f3f4f6 0%, #d1d5db 100%)',
+              gray: 'linear-gradient(135deg, #6b7280 0%, #4b5563 100%)',
+              grey: 'linear-gradient(135deg, #6b7280 0%, #4b5563 100%)'
+            };
+            const gradient = gradientMap[opt.hintColor.toLowerCase()];
+            if (gradient) {
+              hintSpan.style.background = gradient;
+            } else {
+              // Custom color - create gradient from it
+              hintSpan.style.background = `linear-gradient(135deg, ${opt.hintColor} 0%, ${opt.hintColor} 100%)`;
+            }
+            // White text needs dark shadow for white/yellow backgrounds
+            if (opt.hintColor.toLowerCase() === 'white' || opt.hintColor.toLowerCase() === 'yellow') {
+              hintSpan.style.color = '#1f2937';
+            }
+          }
+
+          btn.appendChild(hintSpan);
+        }
 
         btn.addEventListener("click", (e) => {
           const timeSinceDisplay = Date.now() - choicesDisplayedAt;

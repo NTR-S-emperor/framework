@@ -29,6 +29,7 @@
         // Messenger - Choices
         { term: '$choices', description: 'Choices with story impact (branching paths)', page: 'messenger.html', anchor: '#choices' },
         { term: '$fake.choices', description: 'Cosmetic choices without impact (immersion)', page: 'messenger.html', anchor: '#choices' },
+        { term: 'hints', description: 'Add colored hint badges to choices', page: 'messenger.html', anchor: '#hints' },
 
         // Messenger - Locks
         { term: '$lock', description: 'Lock content behind premium tiers', page: 'messenger.html', anchor: '#locks' },

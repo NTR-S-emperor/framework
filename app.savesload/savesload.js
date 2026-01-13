@@ -205,7 +205,8 @@ window.SavesLoad = {
                 doubleplaySpeed: window.Settings.get('doubleplaySpeed'),
                 autoplaySpeed: window.Settings.get('autoplaySpeed'),
                 wallpaper: window.Settings.get('wallpaper'),
-                autoExpandMedia: window.Settings.get('autoExpandMedia')
+                autoExpandMedia: window.Settings.get('autoExpandMedia'),
+                showChoiceHints: window.Settings.get('showChoiceHints')
             };
         }
         return null;
@@ -347,6 +348,9 @@ window.SavesLoad = {
         }
         if (settingsData.autoExpandMedia !== undefined) {
             window.Settings.set('autoExpandMedia', settingsData.autoExpandMedia);
+        }
+        if (settingsData.showChoiceHints !== undefined) {
+            window.Settings.set('showChoiceHints', settingsData.showChoiceHints);
         }
 
         // Update Settings UI if visible

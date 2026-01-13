@@ -39,6 +39,7 @@
                     <a href="messenger.html#reactions" class="nav-link sub">Reactions</a>
                     <a href="messenger.html#thinking" class="nav-link sub">Thinking</a>
                     <a href="messenger.html#choices" class="nav-link sub">Choices</a>
+                    <a href="messenger.html#hints" class="nav-link sub">Choice Hints</a>
                     <a href="messenger.html#locks" class="nav-link sub">Locks</a>
                     <a href="instapics.html" class="nav-link">InstaPics</a>
                     <a href="instapics.html#characters" class="nav-link sub">Characters</a>
@@ -515,6 +516,49 @@ end path</code></pre>
 
             <p>Between these tags, you can create the conversation as you wish. You can even use <code>$talks = example.txt</code> to redirect the user to a discussion that only concerns that choice.</p>
 
+            <h3 id="hints">Choice Hints</h3>
+            <p>You can add hints to help players understand the consequences of their choices. Hints appear as small badges on the right side of choice buttons.</p>
+
+            <table>
+                <tr>
+                    <th>Syntax</th>
+                    <th>Description</th>
+                </tr>
+                <tr>
+                    <td><code>{hint text}</code></td>
+                    <td>Adds a gray hint badge</td>
+                </tr>
+                <tr>
+                    <td><code>{$color:hint text}</code></td>
+                    <td>Adds a colored hint badge</td>
+                </tr>
+            </table>
+
+            <h4>Available Colors</h4>
+            <p>You can use the following colors: <code>red</code>, <code>green</code>, <code>blue</code>, <code>yellow</code>, <code>orange</code>, <code>purple</code>, <code>pink</code>, <code>cyan</code>, <code>gray</code> (or <code>grey</code>), <code>white</code>.</p>
+
+            <h4>Example</h4>
+<pre><code>gf : What should we do tonight?
+$choices =
+A. Go to the party {$green:Good} $/
+B. Stay home and rest {$blue:Neutral} $/
+C. Ignore her message {$red:Bad}</code></pre>
+
+            <div class="info-box info">
+                <div class="info-box-title">User Setting</div>
+                <p>Players can toggle hints visibility in the Settings menu under "Choice hints". When disabled, hints are hidden but choices still work normally.</p>
+            </div>
+
+            <div class="info-box tip">
+                <div class="info-box-title">Best Practices</div>
+                <p>Use hints sparingly to guide players without spoiling the story. Common patterns include:</p>
+                <ul style="margin: 10px 0 0 20px;">
+                    <li><code>{$green:Good}</code> / <code>{$red:Bad}</code> for moral choices</li>
+                    <li><code>{$blue:Safe}</code> / <code>{$orange:Risky}</code> for risk assessment</li>
+                    <li><code>{$purple:Romance}</code> / <code>{$cyan:Friendship}</code> for relationship paths</li>
+                </ul>
+            </div>
+
             <!-- ========== LOCKS ========== -->
             <h2 id="locks">Locks</h2>
             <p>You can lock certain content behind a subscription code:</p>
@@ -591,6 +635,10 @@ $talks = chapter2/example.txt</code></pre>
                 <tr>
                     <td><code>$choices =</code></td>
                     <td>Story choices (with branching paths)</td>
+                </tr>
+                <tr>
+                    <td><code>{hint}</code> / <code>{$color:hint}</code></td>
+                    <td>Choice hints (colored badges)</td>
                 </tr>
                 <tr>
                     <td><code>$lock = file.txt</code></td>

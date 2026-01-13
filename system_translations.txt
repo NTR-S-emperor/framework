@@ -96,6 +96,7 @@
 @settings.autoscroll: EN= Auto scroll | FR= Défilement auto
 @settings.fastscroll: EN= Fast Scroll | FR= Défilement rapide
 @settings.autoexpand: EN= Auto-expand media | FR= Agrandissement auto des médias
+@settings.choicehints: EN= Choice hints | FR= Indices des choix
 @settings.wallpaper: EN= Wallpaper | FR= Fond d'écran
 @settings.wallpaper.choose: EN= Choose | FR= Choisir
 @settings.wallpaper.title: EN= Choose a wallpaper | FR= Choisir un fond d'écran
