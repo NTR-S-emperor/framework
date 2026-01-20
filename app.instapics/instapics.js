@@ -585,6 +585,10 @@ window.InstaPics = {
 
                 if (!rawAuthor || !text) continue;
 
+                // Apply variable substitution for $mc and $gf
+                const author = this.replaceVariables(rawAuthor);
+                const commentText = this.replaceVariables(text);
+
                 const likeCount = likesRaw ? parseInt(likesRaw, 10) || 0 : 0;
 
                 post.commentCount++;
@@ -592,8 +596,8 @@ window.InstaPics = {
                 if (!tag) {
                     // Main comment
                     const comment = {
-                        author: rawAuthor,
-                        text,
+                        author: author,
+                        text: commentText,
                         likes: likeCount,
                         replies: []
                     };
@@ -602,8 +606,8 @@ window.InstaPics = {
                     lastReply = null;
                 } else if (tag === "comments.replied") {
                     const reply = {
-                        author: rawAuthor,
-                        text,
+                        author: author,
+                        text: commentText,
                         likes: likeCount,
                         replies: []
                     };
@@ -617,8 +621,8 @@ window.InstaPics = {
                     }
                 } else if (tag === "replied.replied") {
                     const subReply = {
-                        author: rawAuthor,
-                        text,
+                        author: author,
+                        text: commentText,
                         likes: likeCount,
                         replies: []
                     };
@@ -636,6 +640,39 @@ window.InstaPics = {
         }
 
         return post;
+    },
+
+    // -------------------------------------------------------------------
+    // TEXT VARIABLES
+    // -------------------------------------------------------------------
+    /**
+     * Replaces variables in text (e.g.: $gf -> girlfriend's name, $mc -> player's name)
+     */
+    replaceVariables(text) {
+        if (!text) return text;
+
+        let result = text;
+
+        // Replace $gf with the girlfriend's custom name
+        if (window.customizableCharacterInfo && window.customCharacterNames) {
+            const info = window.customizableCharacterInfo;
+            const customName = window.customCharacterNames[info.key];
+
+            if (customName) {
+                // Replace $gf (case insensitive)
+                result = result.replace(/\$gf\b/gi, customName);
+                // Also replace $girlfriend if used
+                result = result.replace(/\$girlfriend\b/gi, customName);
+            }
+        }
+
+        // Replace $mc with the player's username
+        if (window.mcName) {
+            result = result.replace(/\$mc\b/gi, window.mcName);
+            result = result.replace(/\$player\b/gi, window.mcName);
+        }
+
+        return result;
     },
 
     onOpen() {},

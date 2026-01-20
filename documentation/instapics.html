@@ -44,9 +44,12 @@
                     <a href="instapics.html#characters" class="nav-link sub">Characters</a>
                     <a href="instapics.html#posts" class="nav-link sub">Posts</a>
                     <a href="instapics.html#comments" class="nav-link sub">Comments</a>
+                    <a href="instapics.html#calling" class="nav-link sub">Calling Posts</a>
                     <a href="onlyslut.html" class="nav-link">OnlySlut</a>
                     <a href="onlyslut.html#characters" class="nav-link sub">Characters</a>
                     <a href="onlyslut.html#posts" class="nav-link sub">Posts</a>
+                    <a href="onlyslut.html#comments" class="nav-link sub">Comments</a>
+                    <a href="onlyslut.html#calling" class="nav-link sub">Calling Posts</a>
                     <a href="spy.html" class="nav-link">Spy App</a>
                     <a href="spy.html#unlock" class="nav-link sub">Unlock</a>
                     <a href="spy.html#anchors" class="nav-link sub">Anchors</a>
@@ -103,6 +106,15 @@ Robert (robert.png)</code></pre>
             <p>Here, you can create InstaPics posts using .txt files, for example "example.txt".</p>
 
             <p>From the posts folder, you can freely create subfolders, sub-subfolders, etc. You can organize yourself however you like, if there are different paths to your story, etc.</p>
+
+            <div class="info-box important">
+                <div class="info-box-title">Unlocking a Post</div>
+                <p>Posts do not appear automatically in the app. You must unlock them from a Messenger conversation using the <code>$insta</code> command:</p>
+<pre><code>$insta = chapter1/post1.txt</code></pre>
+                <p>The path is relative to the <code>posts</code> folder. For example, if your file is at:<br>
+                <code>instapics/posts/lovepath/chapter1/party.txt</code></p>
+                <p>You would call it with: <code>$insta = lovepath/chapter1/party.txt</code></p>
+            </div>
 
             <div class="info-box info">
                 <div class="info-box-title">Images Folder</div>
@@ -215,6 +227,44 @@ Robert = Top!</code></pre>
                 <li>&nbsp;&nbsp;&nbsp;&nbsp;Lisa: "Beautiful" (reply to Elvis)</li>
                 <li>Robert: "Top!" (new main comment)</li>
             </ul>
+
+            <h3>Using Custom Names ($mc and $gf)</h3>
+            <p>You can use <code>$mc</code> and <code>$gf</code> variables in comments to display the player's customized names. This works for both the commenter's username and the comment text.</p>
+
+            <table>
+                <tr>
+                    <th>Variable</th>
+                    <th>Description</th>
+                </tr>
+                <tr>
+                    <td><code>$mc</code> or <code>$player</code></td>
+                    <td>Replaced by the player's custom name</td>
+                </tr>
+                <tr>
+                    <td><code>$gf</code> or <code>$girlfriend</code></td>
+                    <td>Replaced by the girlfriend's custom name</td>
+                </tr>
+            </table>
+
+            <h4>Example</h4>
+<pre><code>Comments
+camille_rose 18 = Okay who is the new guy
+$gf 2 = Drinks on me next round!
+$mc 1 "comments.replied" = Oh this escalated fast
+jaynoir-95 = Hey $mc, welcome to the party!</code></pre>
+
+            <p><strong>Result (if player chose "John" for MC and "Sarah" for GF):</strong></p>
+            <ul>
+                <li>camille_rose (18 likes): "Okay who is the new guy"</li>
+                <li><strong>Sarah</strong> (2 likes): "Drinks on me next round!"</li>
+                <li>&nbsp;&nbsp;&nbsp;&nbsp;<strong>John</strong> (1 like): "Oh this escalated fast" (reply to Sarah)</li>
+                <li>jaynoir-95: "Hey <strong>John</strong>, welcome to the party!"</li>
+            </ul>
+
+            <div class="info-box info">
+                <div class="info-box-title">Tip</div>
+                <p>This feature is useful when the MC or GF needs to interact in the comments section, ensuring their customized names are always displayed correctly.</p>
+            </div>
 
             <!-- ========== CALLING ========== -->
             <h2 id="calling">Calling a Post from Messenger</h2>

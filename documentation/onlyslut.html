@@ -47,6 +47,8 @@
                     <a href="onlyslut.html" class="nav-link active">OnlySlut</a>
                     <a href="onlyslut.html#characters" class="nav-link sub">Characters</a>
                     <a href="onlyslut.html#posts" class="nav-link sub">Posts</a>
+                    <a href="onlyslut.html#comments" class="nav-link sub">Comments</a>
+                    <a href="onlyslut.html#calling" class="nav-link sub">Calling Posts</a>
                     <a href="spy.html" class="nav-link">Spy App</a>
                     <a href="spy.html#unlock" class="nav-link sub">Unlock</a>
                     <a href="spy.html#anchors" class="nav-link sub">Anchors</a>
@@ -99,6 +101,15 @@ Lisa (lisa.png)</code></pre>
 
             <p>From the posts folder, you can freely create subfolders, sub-subfolders, etc. You can organize yourself however you like, if there are different paths to your story, etc.</p>
 
+            <div class="info-box important">
+                <div class="info-box-title">Unlocking a Post</div>
+                <p>Posts do not appear automatically in the app. You must unlock them from a Messenger conversation using the <code>$slut</code> command:</p>
+<pre><code>$slut = chapter1/post1.txt</code></pre>
+                <p>The path is relative to the <code>posts</code> folder. For example, if your file is at:<br>
+                <code>onlyslut/posts/lovepath/chapter1/party.txt</code></p>
+                <p>You would call it with: <code>$slut = lovepath/chapter1/party.txt</code></p>
+            </div>
+
             <div class="info-box info">
                 <div class="info-box-title">Images Folder</div>
                 <p>When you create a post and include an image in it, it is important that there is an "images" folder where your .txt file is located and which contains the image for your post.</p>
@@ -121,6 +132,43 @@ Anonymous "replied.replied" = Be careful.
 Elon = Great!</code></pre>
 
             <p>See <a href="instapics.html#posts">InstaPics documentation</a> for full details on post structure and comments.</p>
+
+            <!-- ========== COMMENTS ========== -->
+            <h2 id="comments">Comments</h2>
+            <p>Comments work exactly like in InstaPics. See <a href="instapics.html#comments">InstaPics Comments documentation</a> for the full syntax.</p>
+
+            <h3>Using Custom Names ($mc and $gf)</h3>
+            <p>You can use <code>$mc</code> and <code>$gf</code> variables in comments to display the player's customized names. This works for both the commenter's username and the comment text.</p>
+
+            <table>
+                <tr>
+                    <th>Variable</th>
+                    <th>Description</th>
+                </tr>
+                <tr>
+                    <td><code>$mc</code> or <code>$player</code></td>
+                    <td>Replaced by the player's custom name</td>
+                </tr>
+                <tr>
+                    <td><code>$gf</code> or <code>$girlfriend</code></td>
+                    <td>Replaced by the girlfriend's custom name</td>
+                </tr>
+            </table>
+
+            <h4>Example</h4>
+<pre><code>Comments
+dark_knight 12 = Amazing content
+$gf 8 = Thanks babe
+$mc 3 "comments.replied" = You're welcome
+random_user = Hey $gf, love your posts!</code></pre>
+
+            <p><strong>Result (if player chose "John" for MC and "Sarah" for GF):</strong></p>
+            <ul>
+                <li>dark_knight (12 likes): "Amazing content"</li>
+                <li><strong>Sarah</strong> (8 likes): "Thanks babe"</li>
+                <li>&nbsp;&nbsp;&nbsp;&nbsp;<strong>John</strong> (3 likes): "You're welcome" (reply to Sarah)</li>
+                <li>random_user: "Hey <strong>Sarah</strong>, love your posts!"</li>
+            </ul>
 
             <!-- ========== CALLING ========== -->
             <h2 id="calling">Calling a Post from Messenger</h2>
