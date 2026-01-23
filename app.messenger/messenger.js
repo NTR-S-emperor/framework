@@ -787,8 +787,8 @@ window.Messenger = {
         window.Wallet.setInitialBalance(scriptMsg.initialAmount);
       }
 
-      // Show notification for Wallet app installation
-      if (window.Notifications && window.Notifications.showWallet) {
+      // Show notification for Wallet app installation (unless hidden)
+      if (!scriptMsg.hidden && window.Notifications && window.Notifications.showWallet) {
         const notifText = window.Translations ? window.Translations.get('notif.wallet.installed') : 'Wallet has been installed';
         window.Notifications.showWallet(notifText);
       }
@@ -818,8 +818,8 @@ window.Messenger = {
       if (window.Wallet && window.Wallet.addTransaction) {
         window.Wallet.addTransaction(scriptMsg.author, scriptMsg.amount, scriptMsg.label, scriptMsg.date);
 
-        // Show notification for new transaction
-        if (window.Notifications && window.Notifications.showWallet) {
+        // Show notification for new transaction (unless hidden)
+        if (!scriptMsg.hidden && window.Notifications && window.Notifications.showWallet) {
           const sign = scriptMsg.amount >= 0 ? '+' : '';
           const notifText = `${sign}$${scriptMsg.amount.toFixed(2)} - ${scriptMsg.label}`;
           window.Notifications.showWallet(notifText);
@@ -2576,16 +2576,30 @@ window.Messenger = {
       }
 
       // --- WALLET UNLOCK: $wallet.unlock or $wallet.unlock.AMOUNT ---
-      if (/^\$wallet\.unlock\b/i.test(trimmed)) {
+      // Also supports .hide suffix: $wallet.unlock.hide or $wallet.unlock.AMOUNT.hide
+      if (/^\$wallet\.unlock/i.test(trimmed)) {
         flushCurrentMessage();
 
-        // Check for optional initial amount: $wallet.unlock.100 or $wallet.unlock.-50
-        const unlockMatch = trimmed.match(/^\$wallet\.unlock\.([+-]?\d+(?:\.\d{1,2})?)\s*$/i);
-        const initialAmount = unlockMatch ? parseFloat(unlockMatch[1]) : null;
+        // Check for optional initial amount and/or .hide suffix
+        // Formats: $wallet.unlock | $wallet.unlock.hide | $wallet.unlock.500 | $wallet.unlock.500.hide
+        let initialAmount = null;
+        let hidden = false;
+
+        // Check for .hide suffix
+        if (/\.hide\s*$/i.test(trimmed)) {
+          hidden = true;
+        }
+
+        // Extract amount if present (a number after $wallet.unlock.)
+        const amountMatch = trimmed.match(/^\$wallet\.unlock\.([+-]?\d+(?:\.\d{1,2})?)/i);
+        if (amountMatch) {
+          initialAmount = parseFloat(amountMatch[1]);
+        }
 
         rawMessages.push({
           kind: "wallet_unlock",
-          initialAmount: initialAmount
+          initialAmount: initialAmount,
+          hidden: hidden
         });
 
         i++;
@@ -2593,25 +2607,28 @@ window.Messenger = {
       }
 
       // --- WALLET TRANSACTION LINE: $wallet.mc = -100 : Label : Date ---
-      if (/^\$wallet\.(mc|gf)\b/i.test(trimmed) || /wallet\s*\.\s*(mc|gf)/i.test(trimmed)) {
+      // Also supports $wallet.mc.hide = ... for silent transactions (no notification)
+      if (/^\$wallet\.(mc|gf)(\.hide)?\b/i.test(trimmed) || /wallet\s*\.\s*(mc|gf)(\.hide)?/i.test(trimmed)) {
         flushCurrentMessage();
 
         // Parse: $wallet.mc = -100.50 : Label : Optional Date
-        const m = trimmed.match(/wallet\s*\.\s*(mc|gf)\s*=\s*([+-]?\d+(?:\.\d{1,2})?)\s*:\s*([^:]+)(?:\s*:\s*(.+))?$/i);
+        // Also: $wallet.mc.hide = -100.50 : Label : Optional Date (hidden transaction)
+        const m = trimmed.match(/wallet\s*\.\s*(mc|gf)(\.hide)?\s*=\s*([+-]?\d+(?:\.\d{1,2})?)\s*:\s*([^:]+)(?:\s*:\s*(.+))?$/i);
         if (m) {
           rawMessages.push({
             kind: "wallet",
             author: m[1].toLowerCase(),
-            amount: parseFloat(m[2]),
-            label: m[3].trim(),
-            date: m[4] ? m[4].trim() : ''
+            hidden: !!m[2], // true if .hide was present
+            amount: parseFloat(m[3]),
+            label: m[4].trim(),
+            date: m[5] ? m[5].trim() : ''
           });
         } else {
           // Fallback: try a simpler extraction if the strict regex fails
-          const simpleFallback = trimmed.match(/wallet\s*\.\s*(mc|gf)\s*=\s*([+-]?\d+(?:\.\d{1,2})?)\s*:\s*(.+)/i);
+          const simpleFallback = trimmed.match(/wallet\s*\.\s*(mc|gf)(\.hide)?\s*=\s*([+-]?\d+(?:\.\d{1,2})?)\s*:\s*(.+)/i);
           if (simpleFallback) {
             // Split the rest by colon to get label and optional date
-            const rest = simpleFallback[3];
+            const rest = simpleFallback[4];
             const colonIndex = rest.lastIndexOf(':');
             let label, date;
             if (colonIndex > 0 && colonIndex < rest.length - 1) {
@@ -2633,7 +2650,8 @@ window.Messenger = {
             rawMessages.push({
               kind: "wallet",
               author: simpleFallback[1].toLowerCase(),
-              amount: parseFloat(simpleFallback[2]),
+              hidden: !!simpleFallback[2], // true if .hide was present
+              amount: parseFloat(simpleFallback[3]),
               label: label,
               date: date
             });
@@ -3024,6 +3042,7 @@ window.Messenger = {
         convObj.messages.push({
           kind: "wallet",
           author: msg.author,
+          hidden: msg.hidden || false,
           amount: msg.amount,
           label: msg.label,
           date: msg.date,
@@ -3033,6 +3052,7 @@ window.Messenger = {
         convObj.messages.push({
           kind: "wallet_unlock",
           initialAmount: msg.initialAmount,
+          hidden: msg.hidden || false,
           filename: filename
         });
       } else {

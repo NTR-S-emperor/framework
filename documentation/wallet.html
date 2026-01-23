@@ -55,6 +55,7 @@
                     <a href="wallet.html" class="nav-link active">Wallet</a>
                     <a href="wallet.html#unlock" class="nav-link sub">Unlock</a>
                     <a href="wallet.html#transactions" class="nav-link sub">Transactions</a>
+                    <a href="wallet.html#hidden" class="nav-link sub">Hidden Transactions</a>
                     <a href="wallet.html#notifications" class="nav-link sub">Notifications</a>
                 </div>
 
@@ -104,9 +105,17 @@ $wallet.unlock.-200</code></pre>
                 <p>The initial balance does not appear as a transaction in the history. The user will simply see the balance displayed at the top of the Wallet when they open it.</p>
             </div>
 
+            <h3>Silent Unlock (No Notification)</h3>
+            <p>By default, when the Wallet is unlocked, a notification appears to inform the player that the app has been installed. If you want to unlock the Wallet silently (without any notification), add <code>.hide</code> at the end of the command:</p>
+
+<pre><code>$wallet.unlock.hide
+$wallet.unlock.2500.hide</code></pre>
+
+            <p>This is useful when you want the Wallet to be available without drawing attention to it, or when setting up the initial financial state at the beginning of the story.</p>
+
             <div class="info-box tip">
                 <div class="info-box-title">Tip</div>
-                <p>When the Wallet is unlocked, a notification appears on the phone to inform the user that the app has been installed.</p>
+                <p>Use the silent unlock at the start of your story to set up an initial balance without interrupting the narrative flow. The player will discover the Wallet app naturally when exploring the phone.</p>
             </div>
 
             <!-- ========== TRANSACTIONS ========== -->
@@ -167,6 +176,40 @@ $wallet.unlock.-200</code></pre>
             <div class="info-box info">
                 <div class="info-box-title">Author Names</div>
                 <p>The author field (<code>mc</code> or <code>gf</code>) determines whose name appears on the transaction. If the user has customized character names, those names will be displayed instead of the defaults.</p>
+            </div>
+
+            <!-- ========== HIDDEN TRANSACTIONS ========== -->
+            <h2 id="hidden">Hidden Transactions</h2>
+            <p>Sometimes you may want to add a transaction to the history without displaying a notification to the player. This is useful for:</p>
+            <ul>
+                <li>Background transactions that happened "off-screen"</li>
+                <li>Multiple transactions at once (to avoid notification spam)</li>
+            </ul>
+
+            <h3>Syntax</h3>
+            <p>Add <code>.hide</code> after the author (<code>mc</code> or <code>gf</code>) to make the transaction silent:</p>
+
+<pre><code>$wallet.AUTHOR.hide = AMOUNT : LABEL : DATE</code></pre>
+
+            <h3>Examples</h3>
+
+            <p><strong>Hidden debit from MC:</strong></p>
+<pre><code>$wallet.mc.hide = -100 : Bought a new graphics card</code></pre>
+
+            <p><strong>Hidden debit from GF with date:</strong></p>
+<pre><code>$wallet.gf.hide = -29.99 : Restaurant bill : Dec 25</code></pre>
+
+            <p><strong>Hidden credit:</strong></p>
+<pre><code>$wallet.gf.hide = +150 : Birthday gift from parents : Last week</code></pre>
+
+            <div class="info-box info">
+                <div class="info-box-title">How it works</div>
+                <p>Hidden transactions work exactly like regular transactions: they appear in the transaction history and affect the balance. The only difference is that <strong>no notification</strong> is shown when the transaction is processed.</p>
+            </div>
+
+            <div class="info-box tip">
+                <div class="info-box-title">Use Case Example</div>
+                <p>Imagine you want to reveal that the GF has been secretly spending money. You can add several hidden transactions at once without bombarding the player with notifications, then later in the story have the MC discover the spending when they open the Wallet app.</p>
             </div>
 
             <!-- ========== NOTIFICATIONS ========== -->
@@ -233,6 +276,16 @@ gf : I know, I know... soon!</code></pre>
                     <td><code>$wallet.unlock.500</code></td>
                 </tr>
                 <tr>
+                    <td><code>$wallet.unlock.hide</code></td>
+                    <td>Unlock silently (no notification)</td>
+                    <td><code>$wallet.unlock.hide</code></td>
+                </tr>
+                <tr>
+                    <td><code>$wallet.unlock.AMOUNT.hide</code></td>
+                    <td>Unlock with balance, silently</td>
+                    <td><code>$wallet.unlock.2500.hide</code></td>
+                </tr>
+                <tr>
                     <td><code>$wallet.mc = AMOUNT : LABEL</code></td>
                     <td>Add transaction from MC</td>
                     <td><code>$wallet.mc = -100 : Purchase</code></td>
@@ -246,6 +299,16 @@ gf : I know, I know... soon!</code></pre>
                     <td><code>$wallet.mc = AMOUNT : LABEL : DATE</code></td>
                     <td>Transaction with date</td>
                     <td><code>$wallet.mc = -50 : Dinner : Yesterday</code></td>
+                </tr>
+                <tr>
+                    <td><code>$wallet.mc.hide = AMOUNT : LABEL</code></td>
+                    <td>Hidden transaction from MC (no notification)</td>
+                    <td><code>$wallet.mc.hide = -100 : Secret purchase</code></td>
+                </tr>
+                <tr>
+                    <td><code>$wallet.gf.hide = AMOUNT : LABEL : DATE</code></td>
+                    <td>Hidden transaction from GF with date</td>
+                    <td><code>$wallet.gf.hide = -29.99 : Shopping : Dec 25</code></td>
                 </tr>
             </table>
         </main>
