@@ -565,24 +565,94 @@ C. Ignore her message {$red:Bad}</code></pre>
 
             <!-- ========== LOCKS ========== -->
             <h2 id="locks">Locks</h2>
-            <p>You can lock certain content behind a subscription code:</p>
+            <p>The <code>$lock</code> command allows you to gate content behind a subscription code. It acts as a <strong>conditional <code>$talks</code></strong>: instead of directly unlocking the next conversation file, it redirects to an intermediate <strong>lock file</strong> that checks the player's subscription tier before granting access.</p>
 
-<pre><code>$lock = example.txt</code></pre>
+            <h3>How It Works</h3>
+            <ol>
+                <li>The player reaches <code>$lock = lockfile.txt</code> in a conversation</li>
+                <li>The framework reads the lock file, which contains a <strong>required tier</strong> and a <strong><code>$talks</code> target</strong></li>
+                <li>If the player has a valid code for that tier (or higher) &rarr; the target file is unlocked and the story continues</li>
+                <li>If not &rarr; a modal pops up asking for a subscription code. The conversation is blocked until a valid code is entered</li>
+            </ol>
 
-            <p>Content of the lock file:</p>
+            <h3>Usage</h3>
+            <p>Place <code>$lock</code> in your conversation file <strong>where you would normally put a <code>$talks</code></strong> &mdash; typically at the end of a file, to gate access to the next chapter:</p>
+
+            <h4>In your conversation file (e.g. <code>chapter1/7.txt</code>):</h4>
+<pre><code>gf : Goodnight! 😘
+$lock = locks/part2.txt</code></pre>
+
+            <p class="info-box"><strong>Note:</strong> The <code>$lock</code> replaces the <code>$talks</code> that would normally be here. Do not put both a <code>$lock</code> and a <code>$talks</code> pointing to the same file &mdash; the <code>$talks</code> is inside the lock file.</p>
+
+            <h4>The lock file (e.g. <code>locks/part2.txt</code>):</h4>
 <pre><code>[GOLD]
-$talks = chapter2/example.txt</code></pre>
+$talks = chapter1/8.txt</code></pre>
 
-            <p>Only members with a gold code (or higher) will be able to access this chapter.</p>
+            <p>This lock file means: <em>"Require a GOLD subscription (or higher) to unlock <code>chapter1/8.txt</code>."</em></p>
+
+            <h3>Complete Example</h3>
+            <p>Here's the full flow for locking Part 2 of a story:</p>
 
             <table>
                 <tr>
-                    <th>Available Tiers</th>
+                    <th>Step</th>
+                    <th>File</th>
+                    <th>Content</th>
                 </tr>
                 <tr>
-                    <td><code>[BRONZE]</code>, <code>[SILVER]</code>, <code>[GOLD]</code>, <code>[DIAMOND]</code>, <code>[PLATINUM]</code></td>
+                    <td><strong>1.</strong> End of free content</td>
+                    <td><code>chapter1/7.txt</code></td>
+                    <td><code>$lock = locks/part2.txt</code></td>
+                </tr>
+                <tr>
+                    <td><strong>2.</strong> Lock file (gate)</td>
+                    <td><code>locks/part2.txt</code></td>
+                    <td><code>[BRONZE]</code><br><code>$talks = chapter1/8.txt</code></td>
+                </tr>
+                <tr>
+                    <td><strong>3.</strong> Premium content</td>
+                    <td><code>chapter1/8.txt</code></td>
+                    <td>Story continues normally...</td>
                 </tr>
             </table>
+
+            <h3>Available Tiers</h3>
+            <p>Tiers are hierarchical &mdash; a higher tier grants access to all lower tiers (e.g. a PLATINUM code unlocks everything).</p>
+
+            <table>
+                <tr>
+                    <th>Tier</th>
+                    <th>Access Level</th>
+                </tr>
+                <tr>
+                    <td><code>[BRONZE]</code></td>
+                    <td>Lowest tier</td>
+                </tr>
+                <tr>
+                    <td><code>[SILVER]</code></td>
+                    <td>Includes Bronze</td>
+                </tr>
+                <tr>
+                    <td><code>[GOLD]</code></td>
+                    <td>Includes Silver &amp; Bronze</td>
+                </tr>
+                <tr>
+                    <td><code>[DIAMOND]</code></td>
+                    <td>Includes Gold &amp; below</td>
+                </tr>
+                <tr>
+                    <td><code>[PLATINUM]</code></td>
+                    <td>Highest tier &mdash; unlocks everything</td>
+                </tr>
+            </table>
+
+            <h3>Tips</h3>
+            <ul>
+                <li>Place lock files in a <code>locks/</code> subfolder inside <code>talks/</code> to keep things organized</li>
+                <li>You can use the same tier for all locks (one purchase unlocks everything) or different tiers to create multiple purchase levels</li>
+                <li>Codes are verified via the API and stored in the player's browser (localStorage)</li>
+                <li>The <code>$lock</code> command is ignored in the <a href="spy.html">Spy App</a> &mdash; premium locks only work in the MC's Messenger</li>
+            </ul>
 
             <!-- ========== QUICK REFERENCE ========== -->
             <h2 id="summary">Quick Reference</h2>
