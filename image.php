@@ -82,9 +82,33 @@ function convertImage($sourcePath, $cachePath, $ext) {
 }
 
 /**
+ * Send cache headers tied to source file's modification time.
+ * Cloudflare and browsers cache for 1 year, but ETag ensures
+ * instant revalidation when the source file changes.
+ */
+function sendCacheHeaders($sourcePath) {
+    $mtime = filemtime($sourcePath);
+    $etag = '"' . md5($sourcePath . ':' . $mtime) . '"';
+
+    header('Cache-Control: public, max-age=31536000');
+    header('Last-Modified: ' . gmdate('D, d M Y H:i:s', $mtime) . ' GMT');
+    header('ETag: ' . $etag);
+
+    // 304 Not Modified if client already has this version
+    $ifNoneMatch = isset($_SERVER['HTTP_IF_NONE_MATCH']) ? trim($_SERVER['HTTP_IF_NONE_MATCH']) : '';
+    $ifModifiedSince = isset($_SERVER['HTTP_IF_MODIFIED_SINCE']) ? strtotime($_SERVER['HTTP_IF_MODIFIED_SINCE']) : 0;
+
+    if ($ifNoneMatch === $etag || ($ifModifiedSince && $ifModifiedSince >= $mtime)) {
+        http_response_code(304);
+        exit;
+    }
+}
+
+/**
  * Serve the original file with proper headers.
  */
 function serveOriginal($path, $ext) {
+    sendCacheHeaders($path);
     $mimeTypes = [
         'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg',
         'png' => 'image/png', 'gif' => 'image/gif',
@@ -235,6 +259,7 @@ cleanOldCache($pathPrefix, $cachePath);
 
 // Serve from cache
 if (is_file($cachePath)) {
+    sendCacheHeaders($realFile);
     header('Content-Type: image/webp');
     header('Content-Length: ' . filesize($cachePath));
     header('X-Image-Optimized: cached');
@@ -244,6 +269,7 @@ if (is_file($cachePath)) {
 
 // Convert
 if (convertImage($realFile, $cachePath, $ext)) {
+    sendCacheHeaders($realFile);
     header('Content-Type: image/webp');
     header('Content-Length: ' . filesize($cachePath));
     header('X-Image-Optimized: converted');

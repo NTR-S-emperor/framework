@@ -23,8 +23,9 @@ Require all granted
 </FilesMatch>
 
 <IfModule mod_headers.c>
-    # Long cache for all static assets (1 year) - cache busting via ?v=hash
-    <FilesMatch "\.(js|css|txt|json|png|jpg|jpeg|gif|svg|webp|ico|mp4|webm|ogg|mp3|wav|m4a|woff|woff2|ttf|eot)$">
+    # Long cache for static assets (1 year) - cache busting via ?v=hash
+    # Note: png/jpg/jpeg/gif/bmp are routed through image.php which sets its own headers
+    <FilesMatch "\.(js|css|txt|json|svg|webp|ico|mp4|webm|ogg|mp3|wav|m4a|woff|woff2|ttf|eot)$">
         Header set Cache-Control "public, max-age=31536000, immutable"
     </FilesMatch>
 
