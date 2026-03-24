@@ -4,6 +4,13 @@ DirectoryIndex index.php index.html
 # Allow access to all files
 Require all granted
 
+# Auto-optimize images: route through image.php for WebP conversion
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteCond %{REQUEST_FILENAME} -f
+    RewriteRule \.(png|jpg|jpeg|gif|bmp)$ image.php?f=$0 [L,QSA]
+</IfModule>
+
 # Fallback for older Apache versions
 <IfModule !mod_authz_core.c>
     Order allow,deny

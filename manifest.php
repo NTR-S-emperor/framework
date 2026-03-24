@@ -33,8 +33,10 @@ $extensions = [
 $excludes = [
     'manifest.php',
     'index.php',
+    'image.php',
     '.htaccess',
     '.git',
+    '.image_cache',
     'node_modules',
     'vendor'
 ];
