@@ -855,8 +855,11 @@ window.Settings = {
 
             // "Default" option (uses wallpaper named "1" or a gradient if absent)
             const isDefaultSelected = !currentWallpaper || currentWallpaper === 'default';
-            const defaultStyle = this.defaultWallpaper
-                ? `background-image: url('${this.defaultWallpaper}')`
+            const defaultWpUrl = this.defaultWallpaper
+                ? window.Loader.getVersionedUrl(this.defaultWallpaper)
+                : null;
+            const defaultStyle = defaultWpUrl
+                ? `background-image: url('${defaultWpUrl}')`
                 : 'background: linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
             html += `
                 <button class="settings-wallpaper-item${isDefaultSelected ? ' settings-wallpaper-item--selected' : ''}" data-wallpaper="default" style="${defaultStyle}">
@@ -874,7 +877,7 @@ window.Settings = {
                 const selectedClass = isSelected ? ' settings-wallpaper-item--selected' : '';
 
                 html += `
-                    <button class="settings-wallpaper-item${selectedClass}" data-wallpaper="${wp.src}" style="background-image: url('${wp.src}')">
+                    <button class="settings-wallpaper-item${selectedClass}" data-wallpaper="${wp.src}" style="background-image: url('${window.Loader.getVersionedUrl(wp.src)}')">
                         <span class="settings-wallpaper-label">${window.t('settings.wallpaper.item', { n: index + 1 })}</span>
                         ${isSelected ? '<span class="settings-wallpaper-check">✓</span>' : ''}
                     </button>
@@ -920,7 +923,8 @@ window.Settings = {
 
             if (actualSrc) {
                 // Apply via CSS variable for ::before to use
-                phoneFrame.style.setProperty('--wallpaper-url', `url('${actualSrc}')`);
+                const versionedSrc = window.Loader.getVersionedUrl(actualSrc);
+                phoneFrame.style.setProperty('--wallpaper-url', `url('${versionedSrc}')`);
             } else {
                 phoneFrame.style.setProperty('--wallpaper-url', 'none');
             }

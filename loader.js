@@ -24,6 +24,7 @@ window.Loader = {
     progressInterval: null,
     globalTimeout: null,
     onReadyCallbacks: [],
+    manifest: {},
 
     /**
      * Initialize the loader
@@ -184,6 +185,9 @@ window.Loader = {
                 this.complete();
                 return;
             }
+
+            // Store manifest for use by other modules
+            this.manifest = serverManifest;
 
             // 2. Get cached manifest
             const cachedManifest = this.getCachedManifest();
@@ -450,6 +454,19 @@ window.Loader = {
             callback();
         }
         this.onReadyCallbacks = [];
+    },
+
+    /**
+     * Get versioned URL for a file (with cache-busting hash if available)
+     * Falls back to cached manifest from localStorage if not yet loaded
+     */
+    getVersionedUrl(path) {
+        let hash = this.manifest[path];
+        if (!hash) {
+            const cached = this.getCachedManifest();
+            hash = cached[path];
+        }
+        return hash ? `${path}?v=${hash}` : path;
     }
 };
 
