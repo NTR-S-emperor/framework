@@ -538,6 +538,15 @@ window.SavesLoad = {
             window.unlockedSpySlut = [...(sp.o || [])];
             window.spyAppsUnlocked = sp.apps ? { ...sp.apps } : { instapics: false, onlyslut: false };
 
+            // Sync anchor to localStorage so setSpyAnchor and SpyApp open work correctly
+            try {
+                const slug = window.currentStorySlug || 'default';
+                const saved = localStorage.getItem('studioSpyAnchor') || '{}';
+                const data = JSON.parse(saved);
+                data[slug] = window.currentSpyAnchor;
+                localStorage.setItem('studioSpyAnchor', JSON.stringify(data));
+            } catch (e) {}
+
             // Update home screen to show/hide spy icon
             const spyBtn = document.getElementById('openSpyBtn');
             if (spyBtn) {

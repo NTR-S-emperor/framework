@@ -131,7 +131,6 @@ window.restoreSpyTopics = function() {
  */
 window.setSpyAnchor = function(anchor) {
   const slug = window.currentStorySlug || 'default';
-
   // Only update if the new anchor is higher than current
   if (anchor > window.currentSpyAnchor) {
     window.currentSpyAnchor = anchor;
@@ -727,6 +726,9 @@ window.SpyMessenger = {
     this.characters = {};
     this.fileSequence = [];
     this.navigationTargets = {};
+    // previousAnchor = currentAnchor - 1
+    // When currentAnchor = N, new content = between $spy_anchor_{N-1} and $spy_anchor_N
+    // The separator for anchor N-1 marks where this new content starts
     this.previousAnchor = Math.max(0, (window.getSpyAnchor ? window.getSpyAnchor() : 0) - 1);
     // Reset visit tracking so we scroll to new content when anchor changes
     this.hasVisitedInSession = {};
@@ -872,7 +874,7 @@ window.SpyMessenger = {
       const linkedAfterAnchor = fileEntry.linkedAfterAnchor || 0;
 
       // Skip files linked after an anchor that we haven't reached yet
-      // If a file is linked after $spy_anchor_N, it requires currentAnchor > N to be visible
+      // Files linked after $spy_anchor_N require currentAnchor > N to be visible
       if (linkedAfterAnchor > 0 && linkedAfterAnchor >= currentAnchor) {
         fileIndex++;
         continue;
@@ -956,6 +958,12 @@ window.SpyMessenger = {
                 };
               }
 
+              // Add invisible file start marker (used by navigation to scroll to the right position)
+              this.conversationsByKey[contactKey].messages.push({
+                type: 'file_start',
+                file: filename
+              });
+
               // If this file was linked after an anchor, add a separator
               // to indicate this content is from a previous anchor
               // Only add if we haven't already added a separator for this anchor
@@ -999,7 +1007,8 @@ window.SpyMessenger = {
           }
 
           // Check for $spy_anchor_X - stop adding messages if anchor >= currentAnchor
-          // Content after $spy_anchor_N requires MC to have called $spy_anchor_N+1
+          // $spy_anchor_N marks the END of chapter N: content before it is visible when currentAnchor >= N
+          // New content (chapter N) = between $spy_anchor_{N-1} and $spy_anchor_N
           const anchorMatch = trimmed.match(/^\$spy_anchor[_\s]*(\d+)$/i);
           if (anchorMatch) {
             const anchor = parseInt(anchorMatch[1], 10);
@@ -1223,11 +1232,13 @@ window.SpyMessenger = {
 
         this.parsedFiles.push(filename);
 
-        // Track file sequence for navigation
+        // Track file sequence for navigation (with anchor and message position)
         if (contactKey) {
           this.fileSequence.push({
             file: filename,
-            contactKey: contactKey
+            contactKey: contactKey,
+            anchor: linkedAfterAnchor,
+            messageEndIndex: this.conversationsByKey[contactKey].messages.length
           });
         }
       } catch (e) {
@@ -1263,68 +1274,95 @@ window.SpyMessenger = {
 
   /**
    * Build navigation targets based on file sequence
-   * Determines which conversation leads to which next conversation
+   * Inserts "next content" buttons at the exact positions where the story
+   * transitions from one conversation to another, supporting interleaved
+   * conversations (e.g. A → B → A → B).
    */
   buildNavigationTargets() {
     this.navigationTargets = {};
 
-    // Analyze the file sequence to find conversation transitions
-    // We need to find where one conversation ends and another begins
-    let lastContactKey = null;
-    let conversationOrder = []; // Track unique conversations in order
+    // Collect all button insertions based on conversation transitions
+    const insertions = []; // { convKey, atIndex, data }
 
-    for (const entry of this.fileSequence) {
-      if (entry.contactKey !== lastContactKey) {
-        // New conversation encountered
-        if (lastContactKey !== null && entry.contactKey !== lastContactKey) {
-          // Transition from one conversation to another
-          if (!this.navigationTargets[lastContactKey]) {
-            this.navigationTargets[lastContactKey] = {};
+    for (let i = 0; i < this.fileSequence.length; i++) {
+      const current = this.fileSequence[i];
+      const next = this.fileSequence[i + 1];
+
+      if (next && current.contactKey !== next.contactKey) {
+        // Story transitions from current conversation to next
+        insertions.push({
+          convKey: current.contactKey,
+          atIndex: current.messageEndIndex,
+          data: {
+            type: 'next_content_button',
+            targetConversation: next.contactKey,
+            targetFile: next.file
           }
-          this.navigationTargets[lastContactKey].nextConversation = entry.contactKey;
-        }
-        conversationOrder.push(entry.contactKey);
-        lastContactKey = entry.contactKey;
+        });
       }
     }
 
-    // Identify the LAST conversation in fileSequence (the true final one)
-    let finalConversationKey = null;
+    // Add "end of content" marker at the end of the very last conversation
     if (this.fileSequence.length > 0) {
-      finalConversationKey = this.fileSequence[this.fileSequence.length - 1].contactKey;
+      const last = this.fileSequence[this.fileSequence.length - 1];
+      insertions.push({
+        convKey: last.contactKey,
+        atIndex: last.messageEndIndex,
+        data: { type: 'end_content_marker' }
+      });
     }
 
-    // Add navigation buttons to conversations that have a next conversation
-    // BUT skip adding next_content_button to the final conversation
-    for (const key of Object.keys(this.navigationTargets)) {
-      if (key === finalConversationKey) {
-        continue;
-      }
-      const conv = this.conversationsByKey[key];
-      const target = this.navigationTargets[key];
-      if (conv && target.nextConversation) {
-        conv.messages.push({
-          type: 'next_content_button',
-          targetConversation: target.nextConversation
-        });
-      }
+    // Group insertions by conversation, then splice in descending index order
+    // (inserting from end first avoids index shifting issues)
+    const byConv = {};
+    for (const ins of insertions) {
+      if (!byConv[ins.convKey]) byConv[ins.convKey] = [];
+      byConv[ins.convKey].push(ins);
     }
 
-    // Add "end of content" marker to the final conversation
-    if (finalConversationKey) {
-      const finalConv = this.conversationsByKey[finalConversationKey];
-      if (finalConv) {
-        finalConv.messages.push({
-          type: 'end_content_marker'
-        });
+    for (const convKey of Object.keys(byConv)) {
+      const conv = this.conversationsByKey[convKey];
+      if (!conv) continue;
+
+      byConv[convKey].sort((a, b) => b.atIndex - a.atIndex);
+
+      for (const ins of byConv[convKey]) {
+        conv.messages.splice(ins.atIndex, 0, ins.data);
       }
     }
   },
 
   /**
    * Navigate to the next conversation with new content
+   * @param {string} targetKey - The conversation key to navigate to
+   * @param {string} targetFile - The filename whose file_start marker to scroll to
    */
-  navigateToNextContent(targetKey) {
+  navigateToNextContent(targetKey, targetFile) {
+    // Find the target conversation and the message index of the file_start marker
+    const conv = this.conversations.find(c => c.key === targetKey);
+    if (!conv) return;
+
+    // Find the index of the file_start marker for targetFile
+    let targetIndex = -1;
+    if (targetFile) {
+      targetIndex = conv.messages.findIndex(m => m.type === 'file_start' && m.file === targetFile);
+    }
+
+    // Reset virtual data so the rendered range is recalculated around the target
+    if (conv.virtualData) {
+      conv.virtualData.renderedRange = { start: 0, end: 0 };
+    }
+
+    // Store the target file so selectConversation can use it for scrolling
+    this._pendingScrollFile = targetFile;
+    this._pendingScrollIndex = targetIndex;
+
+    // Mark as visited but clear scroll position (we'll set a custom one)
+    this.hasVisitedInSession[targetKey] = true;
+    delete this.scrollPositions[targetKey];
+
+    // Select the conversation (this triggers rendering)
+    this.selectedKey = null; // Force re-render even if same conversation
     this.selectConversation(targetKey);
   },
 
@@ -1388,12 +1426,41 @@ window.SpyMessenger = {
       messengerApp.style.backgroundImage = `url('${textureUrl}')`;
     }
 
-    // Auto-select the first conversation in story order (where content begins)
-    // The list remains sorted by recent activity, but selection follows story flow
-    if (this.fileSequence.length > 0) {
-      this.selectConversation(this.fileSequence[0].contactKey);
-    } else if (this.conversations.length > 0) {
-      this.selectConversation(this.conversations[0].key);
+    // Auto-select the first conversation that has NEW content for the current anchor
+    // When previousAnchor > 0, find the first conversation with a separator marking
+    // the boundary of the new content. Otherwise, select the first conversation in story order.
+    let autoSelectKey = null;
+
+    if (this.previousAnchor > 0) {
+      // Build unique conversation order from file sequence
+      const conversationOrder = [];
+      for (const entry of this.fileSequence) {
+        if (!conversationOrder.includes(entry.contactKey)) {
+          conversationOrder.push(entry.contactKey);
+        }
+      }
+      // Find the first conversation that has a separator for previousAnchor
+      // (meaning it contains new content that just got unlocked)
+      for (const key of conversationOrder) {
+        const conv = this.conversationsByKey[key];
+        if (conv && conv.messages.some(m => m.type === 'separator' && m.anchor === this.previousAnchor)) {
+          autoSelectKey = key;
+          break;
+        }
+      }
+    }
+
+    // Fallback: first conversation in story order
+    if (!autoSelectKey) {
+      if (this.fileSequence.length > 0) {
+        autoSelectKey = this.fileSequence[0].contactKey;
+      } else if (this.conversations.length > 0) {
+        autoSelectKey = this.conversations[0].key;
+      }
+    }
+
+    if (autoSelectKey) {
+      this.selectConversation(autoSelectKey);
     }
   },
 
@@ -1559,22 +1626,25 @@ window.SpyMessenger = {
       const vd = this.initConversationVirtualData(conv);
 
       // Determine initial range
-      if (isFirstVisit) {
-        const anchorIndex = this.findPreviousAnchorIndex(messages);
-        if (anchorIndex >= 0) {
-          // Center the window around the anchor
-          const { windowSize } = this.virtualScroll;
-          const halfWindow = Math.floor(windowSize / 2);
-          const start = Math.max(0, anchorIndex - halfWindow);
-          const end = Math.min(totalMessages, start + windowSize);
-          vd.renderedRange = { start, end };
+      if (isFirstVisit || this._pendingScrollIndex >= 0) {
+        // Find the best center point for the rendered window
+        let centerIndex = 0;
+
+        if (this._pendingScrollIndex >= 0) {
+          // Navigation from "next content" button: center around target file
+          centerIndex = this._pendingScrollIndex;
         } else {
-          // Start from the beginning
-          vd.renderedRange = {
-            start: 0,
-            end: Math.min(totalMessages, this.virtualScroll.windowSize)
-          };
+          const anchorIndex = this.findPreviousAnchorIndex(messages);
+          if (anchorIndex >= 0) {
+            centerIndex = anchorIndex;
+          }
         }
+
+        const { windowSize } = this.virtualScroll;
+        const halfWindow = Math.floor(windowSize / 2);
+        const start = Math.max(0, centerIndex - halfWindow);
+        const end = Math.min(totalMessages, start + windowSize);
+        vd.renderedRange = { start, end };
       } else {
         // Restore previous range or default to beginning
         if (!vd.renderedRange || (vd.renderedRange.start === 0 && vd.renderedRange.end === 0)) {
@@ -1605,8 +1675,8 @@ window.SpyMessenger = {
       this.bindMediaEvents();
 
       // Scroll position
-      if (isFirstVisit) {
-        this.scrollToAnchorOrTop(conv);
+      if (isFirstVisit || this._pendingScrollFile) {
+        this.scrollToTarget(conv);
       } else {
         const savedPosition = this.scrollPositions[conv.key];
         if (savedPosition !== undefined) {
@@ -1633,13 +1703,19 @@ window.SpyMessenger = {
       return `<div class="ms-separator" data-anchor="${msg.anchor}"><span class="ms-separator-text">${separatorText}</span></div>`;
     }
 
+    // Handle invisible file start marker (scroll target for navigation)
+    if (msg.type === 'file_start') {
+      return `<div class="spy-file-start" data-file="${msg.file}" data-msg-index="${index}"></div>`;
+    }
+
     // Handle "next content" navigation button
     if (msg.type === 'next_content_button') {
       const targetKey = msg.targetConversation;
+      const targetFile = msg.targetFile || '';
       const buttonText = window.Translations
         ? window.Translations.get('spy.next_content')
         : 'Continue to next content';
-      return `<div class="spy-next-content-button" data-target="${targetKey}">
+      return `<div class="spy-next-content-button" data-target="${targetKey}" data-target-file="${targetFile}">
         <button class="spy-next-content-btn">
           <span class="spy-next-content-text">${buttonText}</span>
           <svg class="spy-next-content-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1755,26 +1831,50 @@ window.SpyMessenger = {
   // ── Virtual scrolling system (sentinel-based, aligned with MC Messenger) ──
 
   /**
-   * Scroll to anchor separator or top of conversation
+   * Scroll to the right position in a conversation:
+   * 1. If _pendingScrollFile is set (from navigateToNextContent), scroll to that file marker
+   * 2. Otherwise if there's an anchor separator, scroll to it
+   * 3. Otherwise scroll to top
    */
-  scrollToAnchorOrTop(conv) {
+  scrollToTarget(conv) {
+    this.virtualScroll.isScrollingToAnchor = true;
+
+    // Priority 1: pending file navigation (from "next content" button)
+    if (this._pendingScrollFile) {
+      const targetFile = this._pendingScrollFile;
+      this._pendingScrollFile = null;
+      this._pendingScrollIndex = -1;
+      const marker = this.chatMessagesEl.querySelector(`.spy-file-start[data-file="${targetFile}"]`);
+      if (marker) {
+        marker.scrollIntoView({ behavior: 'instant', block: 'start' });
+        this._unblockScrollFlag();
+        return;
+      }
+    }
+
+    // Priority 2: anchor separator
     const messages = conv.messages || [];
     const anchorIndex = this.findPreviousAnchorIndex(messages);
     if (anchorIndex >= 0) {
       const separatorEl = this.chatMessagesEl.querySelector(`.ms-separator[data-anchor="${this.previousAnchor}"]`);
       if (separatorEl) {
-        this.virtualScroll.isScrollingToAnchor = true;
         separatorEl.scrollIntoView({ behavior: 'instant', block: 'start' });
-        // Unblock after layout settles
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            this.virtualScroll.isScrollingToAnchor = false;
-          });
-        });
+        this._unblockScrollFlag();
         return;
       }
     }
+
+    // Priority 3: top
     this.chatMessagesEl.scrollTop = 0;
+    this.virtualScroll.isScrollingToAnchor = false;
+  },
+
+  _unblockScrollFlag() {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        this.virtualScroll.isScrollingToAnchor = false;
+      });
+    });
   },
 
   /**
@@ -1859,7 +1959,7 @@ window.SpyMessenger = {
 
     const options = {
       root: this.chatMessagesEl,
-      rootMargin: '200px 0px', // Load before sentinel is actually visible
+      rootMargin: '600px 0px', // Load well before sentinel is visible (prevents empty gaps)
       threshold: 0
     };
 
@@ -1883,7 +1983,8 @@ window.SpyMessenger = {
   },
 
   /**
-   * Load more messages in the specified direction
+   * Load more messages by APPENDING or PREPENDING to the existing DOM,
+   * and TRIMMING from the opposite end to prevent DOM bloat.
    * @param {'up' | 'down'} direction - Direction to load messages
    * @param {Object} conv - The conversation object
    */
@@ -1892,48 +1993,205 @@ window.SpyMessenger = {
     if (this.virtualScroll.isLoadingMore) return;
 
     const vd = conv.virtualData;
-    const totalMessages = conv.messages.length;
+    const messages = conv.messages;
+    const totalMessages = messages.length;
     const { windowSize, bufferSize } = this.virtualScroll;
     const { start, end } = vd.renderedRange;
-
-    let newStart = start;
-    let newEnd = end;
-
-    if (direction === 'up' && start > 0) {
-      newStart = Math.max(0, start - bufferSize);
-      if (newEnd - newStart > windowSize + bufferSize * 2) {
-        newEnd = newStart + windowSize + bufferSize;
-      }
-    } else if (direction === 'down' && end < totalMessages) {
-      newEnd = Math.min(totalMessages, end + bufferSize);
-      if (newEnd - newStart > windowSize + bufferSize * 2) {
-        newStart = newEnd - windowSize - bufferSize;
-      }
-    } else {
-      return; // Nothing to load
-    }
-
-    // Check if range actually changed
-    if (newStart === start && newEnd === end) return;
+    const maxRendered = windowSize + bufferSize * 2;
 
     this.virtualScroll.isLoadingMore = true;
 
-    // Save scroll position before modifying DOM
-    const scrollTop = this.chatMessagesEl.scrollTop;
-    const scrollHeight = this.chatMessagesEl.scrollHeight;
+    if (direction === 'down' && end < totalMessages) {
+      const newEnd = Math.min(totalMessages, end + bufferSize);
 
-    // Update rendered range
-    vd.renderedRange = { start: newStart, end: newEnd };
+      // Remove old bottom sentinel and spacer
+      const oldSentinel = this.chatMessagesEl.querySelector('.ms-sentinel-bottom');
+      const oldSpacer = this.chatMessagesEl.querySelector('.ms-virtual-spacer--bottom');
+      if (oldSentinel) oldSentinel.remove();
+      if (oldSpacer) oldSpacer.remove();
 
-    // Re-render with new range (don't scroll to anchor)
-    this.renderVirtualizedMessages(conv, false);
+      // Append new messages
+      let lastSender = end > 0 ? messages[end - 1]?.sender : null;
+      for (let i = end; i < newEnd; i++) {
+        const html = this.createMessageHtml(messages[i], i, conv, lastSender);
+        this.chatMessagesEl.insertAdjacentHTML('beforeend', html);
+        lastSender = messages[i].sender;
+      }
 
-    // Restore scroll position if loading at top
-    if (direction === 'up') {
+      let newStart = start;
+
+      // Trim from top if too many messages in DOM
+      if (newEnd - newStart > maxRendered) {
+        const trimTo = newEnd - maxRendered;
+        // Measure heights of elements being trimmed before removing them
+        this.measureRenderedHeights(conv);
+
+        // Remove message elements from the DOM (between old top sentinel/spacer and the trim point)
+        const allMsgEls = this.chatMessagesEl.querySelectorAll('[data-msg-index], .spy-file-start, .ms-separator, .spy-next-content-button, .spy-end-content-marker, .spy-thinking-trigger');
+        allMsgEls.forEach(el => {
+          const idx = parseInt(el.dataset.msgIndex, 10);
+          // Remove elements that belong to the trimmed range
+          // For elements without data-msg-index, check position-based
+          if (!isNaN(idx) && idx < trimTo) {
+            el.remove();
+          } else if (isNaN(idx)) {
+            // For file_start, separator, etc: check if they're before the first kept message
+            // Use DOM order: if it comes before any kept message element, remove it
+            const firstKept = this.chatMessagesEl.querySelector(`[data-msg-index="${trimTo}"]`);
+            if (firstKept && el.compareDocumentPosition(firstKept) & Node.DOCUMENT_POSITION_FOLLOWING) {
+              el.remove();
+            }
+          }
+        });
+
+        // Remove old top spacer and sentinel
+        const oldTopSpacer = this.chatMessagesEl.querySelector('.ms-virtual-spacer--top');
+        const oldTopSentinel = this.chatMessagesEl.querySelector('.ms-sentinel-top');
+        if (oldTopSpacer) oldTopSpacer.remove();
+        if (oldTopSentinel) oldTopSentinel.remove();
+
+        // Add new top spacer
+        const topSpacerHeight = this.calculateSpacerHeight(conv, 0, trimTo);
+        if (topSpacerHeight > 0) {
+          this.chatMessagesEl.insertAdjacentHTML('afterbegin',
+            `<div class="ms-sentinel ms-sentinel-top"></div>` +
+            `<div class="ms-virtual-spacer ms-virtual-spacer--top" style="height:${topSpacerHeight}px"></div>`
+          );
+        } else if (trimTo > 0) {
+          this.chatMessagesEl.insertAdjacentHTML('afterbegin',
+            `<div class="ms-sentinel ms-sentinel-top"></div>`
+          );
+        }
+
+        newStart = trimTo;
+      }
+
+      // Re-add bottom sentinel if there are more messages
+      if (newEnd < totalMessages) {
+        const sentinel = document.createElement('div');
+        sentinel.className = 'ms-sentinel ms-sentinel-bottom';
+        this.chatMessagesEl.appendChild(sentinel);
+      }
+
+      // Re-add bottom spacer
+      const spacerHeight = this.calculateSpacerHeight(conv, newEnd, totalMessages);
+      if (spacerHeight > 0) {
+        const spacer = document.createElement('div');
+        spacer.className = 'ms-virtual-spacer ms-virtual-spacer--bottom';
+        spacer.style.height = spacerHeight + 'px';
+        this.chatMessagesEl.appendChild(spacer);
+      }
+
+      vd.renderedRange = { start: newStart, end: newEnd };
+
+      this.bindMediaEvents();
       requestAnimationFrame(() => {
-        const newScrollHeight = this.chatMessagesEl.scrollHeight;
-        const addedHeight = newScrollHeight - scrollHeight;
-        this.chatMessagesEl.scrollTop = scrollTop + addedHeight;
+        this.measureRenderedHeights(conv);
+        // Re-observe sentinels
+        if (this.virtualScroll.sentinelObserver) {
+          const ts = this.chatMessagesEl.querySelector('.ms-sentinel-top');
+          const bs = this.chatMessagesEl.querySelector('.ms-sentinel-bottom');
+          if (ts) this.virtualScroll.sentinelObserver.observe(ts);
+          if (bs) this.virtualScroll.sentinelObserver.observe(bs);
+        }
+        this.virtualScroll.isLoadingMore = false;
+      });
+
+    } else if (direction === 'up' && start > 0) {
+      const newStart = Math.max(0, start - bufferSize);
+      const scrollTopBefore = this.chatMessagesEl.scrollTop;
+      const scrollHeightBefore = this.chatMessagesEl.scrollHeight;
+
+      // Remove old top spacer and sentinel
+      const oldSpacer = this.chatMessagesEl.querySelector('.ms-virtual-spacer--top');
+      const oldSentinel = this.chatMessagesEl.querySelector('.ms-sentinel-top');
+      if (oldSpacer) oldSpacer.remove();
+      if (oldSentinel) oldSentinel.remove();
+
+      // Build HTML to prepend
+      let prependHtml = '';
+
+      // New top spacer + sentinel
+      const topSpacerHeight = this.calculateSpacerHeight(conv, 0, newStart);
+      if (topSpacerHeight > 0) {
+        prependHtml += `<div class="ms-virtual-spacer ms-virtual-spacer--top" style="height:${topSpacerHeight}px"></div>`;
+      }
+      if (newStart > 0) {
+        prependHtml += `<div class="ms-sentinel ms-sentinel-top"></div>`;
+      }
+
+      // New messages
+      let lastSender = newStart > 0 ? messages[newStart - 1]?.sender : null;
+      for (let i = newStart; i < start; i++) {
+        prependHtml += this.createMessageHtml(messages[i], i, conv, lastSender);
+        lastSender = messages[i].sender;
+      }
+
+      // Insert at the beginning of the content area
+      const firstContentEl = this.chatMessagesEl.firstChild;
+      if (firstContentEl) {
+        firstContentEl.insertAdjacentHTML('beforebegin', prependHtml);
+      } else {
+        this.chatMessagesEl.insertAdjacentHTML('afterbegin', prependHtml);
+      }
+
+      let newEnd = end;
+
+      // Trim from bottom if too many messages in DOM
+      if (newEnd - newStart > maxRendered) {
+        const trimFrom = newStart + maxRendered;
+        this.measureRenderedHeights(conv);
+
+        // Remove old bottom sentinel and spacer first
+        const oldBottomSentinel = this.chatMessagesEl.querySelector('.ms-sentinel-bottom');
+        const oldBottomSpacer = this.chatMessagesEl.querySelector('.ms-virtual-spacer--bottom');
+        if (oldBottomSentinel) oldBottomSentinel.remove();
+        if (oldBottomSpacer) oldBottomSpacer.remove();
+
+        // Remove message elements from the bottom
+        const allMsgEls = this.chatMessagesEl.querySelectorAll('[data-msg-index], .spy-file-start, .ms-separator, .spy-next-content-button, .spy-end-content-marker, .spy-thinking-trigger');
+        allMsgEls.forEach(el => {
+          const idx = parseInt(el.dataset.msgIndex, 10);
+          if (!isNaN(idx) && idx >= trimFrom) {
+            el.remove();
+          }
+        });
+
+        newEnd = trimFrom;
+
+        // Re-add bottom sentinel + spacer
+        if (newEnd < totalMessages) {
+          const sentinel = document.createElement('div');
+          sentinel.className = 'ms-sentinel ms-sentinel-bottom';
+          this.chatMessagesEl.appendChild(sentinel);
+        }
+        const bottomSpacerHeight = this.calculateSpacerHeight(conv, newEnd, totalMessages);
+        if (bottomSpacerHeight > 0) {
+          const spacer = document.createElement('div');
+          spacer.className = 'ms-virtual-spacer ms-virtual-spacer--bottom';
+          spacer.style.height = bottomSpacerHeight + 'px';
+          this.chatMessagesEl.appendChild(spacer);
+        }
+      }
+
+      vd.renderedRange = { start: newStart, end: newEnd };
+
+      this.bindMediaEvents();
+      requestAnimationFrame(() => {
+        // Restore scroll position
+        const scrollHeightAfter = this.chatMessagesEl.scrollHeight;
+        const addedHeight = scrollHeightAfter - scrollHeightBefore;
+        this.chatMessagesEl.scrollTop = scrollTopBefore + addedHeight;
+
+        this.measureRenderedHeights(conv);
+
+        // Re-observe sentinels
+        if (this.virtualScroll.sentinelObserver) {
+          const ts = this.chatMessagesEl.querySelector('.ms-sentinel-top');
+          const bs = this.chatMessagesEl.querySelector('.ms-sentinel-bottom');
+          if (ts) this.virtualScroll.sentinelObserver.observe(ts);
+          if (bs) this.virtualScroll.sentinelObserver.observe(bs);
+        }
         this.virtualScroll.isLoadingMore = false;
       });
     } else {
@@ -1963,13 +2221,6 @@ window.SpyMessenger = {
       this.virtualScroll.sentinelObserver.disconnect();
     }
 
-    // Top sentinel (for loading older messages)
-    if (start > 0) {
-      const topSentinel = document.createElement('div');
-      topSentinel.className = 'ms-sentinel ms-sentinel-top';
-      this.chatMessagesEl.appendChild(topSentinel);
-    }
-
     // Top spacer for messages above rendered range
     const topSpacerHeight = this.calculateSpacerHeight(conv, 0, start);
     if (topSpacerHeight > 0) {
@@ -1977,6 +2228,13 @@ window.SpyMessenger = {
       topSpacer.className = 'ms-virtual-spacer ms-virtual-spacer--top';
       topSpacer.style.height = topSpacerHeight + 'px';
       this.chatMessagesEl.appendChild(topSpacer);
+    }
+
+    // Top sentinel AFTER spacer (triggers when user scrolls up past rendered messages)
+    if (start > 0) {
+      const topSentinel = document.createElement('div');
+      topSentinel.className = 'ms-sentinel ms-sentinel-top';
+      this.chatMessagesEl.appendChild(topSentinel);
     }
 
     // Render visible messages
@@ -1987,6 +2245,14 @@ window.SpyMessenger = {
       lastSender = messages[i].sender;
     }
 
+    // Bottom sentinel BEFORE spacer (so it triggers as soon as user reaches
+    // the end of rendered messages, not after scrolling through the void)
+    if (end < totalMessages) {
+      const bottomSentinel = document.createElement('div');
+      bottomSentinel.className = 'ms-sentinel ms-sentinel-bottom';
+      this.chatMessagesEl.appendChild(bottomSentinel);
+    }
+
     // Bottom spacer for messages below rendered range
     const bottomSpacerHeight = this.calculateSpacerHeight(conv, end, totalMessages);
     if (bottomSpacerHeight > 0) {
@@ -1994,13 +2260,6 @@ window.SpyMessenger = {
       bottomSpacer.className = 'ms-virtual-spacer ms-virtual-spacer--bottom';
       bottomSpacer.style.height = bottomSpacerHeight + 'px';
       this.chatMessagesEl.appendChild(bottomSpacer);
-    }
-
-    // Bottom sentinel (for loading newer messages)
-    if (end < totalMessages) {
-      const bottomSentinel = document.createElement('div');
-      bottomSentinel.className = 'ms-sentinel ms-sentinel-bottom';
-      this.chatMessagesEl.appendChild(bottomSentinel);
     }
 
     this.bindMediaEvents();
@@ -2019,8 +2278,9 @@ window.SpyMessenger = {
     });
 
     // Scroll position
-    if (isFirstVisit) {
-      this.scrollToAnchorOrTop(conv);
+    if (isFirstVisit || this._pendingScrollFile) {
+      // First visit or navigation via "next content" button
+      this.scrollToTarget(conv);
     } else {
       const savedPosition = this.scrollPositions[conv.key];
       if (savedPosition !== undefined) {
@@ -2155,9 +2415,10 @@ window.SpyMessenger = {
     nextContentBtns.forEach(container => {
       const btn = container.querySelector('.spy-next-content-btn');
       const targetKey = container.dataset.target;
+      const targetFile = container.dataset.targetFile || '';
       if (btn && targetKey) {
         btn.addEventListener('click', () => {
-          this.navigateToNextContent(targetKey);
+          this.navigateToNextContent(targetKey, targetFile);
         });
       }
     });
