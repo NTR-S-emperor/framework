@@ -17,6 +17,21 @@
 
 $cacheDir = __DIR__ . '/.image_cache';
 
+// Admin token for cache management endpoints (warm_cache, clear_cache, status)
+// Change this value or set it via environment variable
+$adminToken = getenv('IMAGE_CACHE_TOKEN') ?: 'CHANGE_ME_TO_A_SECRET';
+
+function checkAdminToken() {
+    global $adminToken;
+    $provided = isset($_GET['token']) ? $_GET['token'] : '';
+    if ($adminToken === 'CHANGE_ME_TO_A_SECRET' || $provided !== $adminToken) {
+        http_response_code(403);
+        header('Content-Type: application/json');
+        echo json_encode(['error' => 'Invalid or missing token']);
+        exit;
+    }
+}
+
 /**
  * Ensure cache directory exists and is writable by the web server.
  */
@@ -136,8 +151,9 @@ function serveOriginal($path, $ext) {
 
 $convertibleExts = ['png', 'jpg', 'jpeg', 'gif', 'bmp'];
 
-// ─── Status endpoint: image.php?status=1 ───
+// ─── Status endpoint: image.php?status=1&token=SECRET ───
 if (isset($_GET['status'])) {
+    checkAdminToken();
     header('Content-Type: application/json');
     $cacheSize = 0;
     $cacheCount = 0;
@@ -157,8 +173,9 @@ if (isset($_GET['status'])) {
     exit;
 }
 
-// ─── Clear cache endpoint: image.php?clear_cache=1 ───
+// ─── Clear cache endpoint: image.php?clear_cache=1&token=SECRET ───
 if (isset($_GET['clear_cache'])) {
+    checkAdminToken();
     $deleted = 0;
     if (is_dir($cacheDir)) {
         foreach (glob($cacheDir . '/*.webp') as $f) {
@@ -171,8 +188,9 @@ if (isset($_GET['clear_cache'])) {
     exit;
 }
 
-// ─── Pre-convert all images: image.php?warm_cache=1 ───
+// ─── Pre-convert all images: image.php?warm_cache=1&token=SECRET ───
 if (isset($_GET['warm_cache'])) {
+    checkAdminToken();
     if (!function_exists('imagecreatefromstring') || !function_exists('imagewebp')) {
         header('Content-Type: application/json');
         echo json_encode(['error' => 'GD with WebP support is required']);
