@@ -8,7 +8,7 @@ Require all granted
 <IfModule mod_rewrite.c>
     RewriteEngine On
     RewriteCond %{REQUEST_FILENAME} -f
-    RewriteRule \.(png|jpg|jpeg|gif|bmp)$ image.php?f=$0 [L,QSA]
+    RewriteRule ^(.+\.(png|jpg|jpeg|gif|bmp))$ image.php?f=$1 [B,L,QSA]
 </IfModule>
 
 # Fallback for older Apache versions

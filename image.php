@@ -18,6 +18,19 @@
 $cacheDir = __DIR__ . '/.image_cache';
 
 /**
+ * Ensure cache directory exists and is writable by the web server.
+ */
+function ensureCacheDir() {
+    global $cacheDir;
+    if (!is_dir($cacheDir)) {
+        @mkdir($cacheDir, 0775, true);
+        @chmod($cacheDir, 0775);
+    } elseif (!is_writable($cacheDir)) {
+        @chmod($cacheDir, 0775);
+    }
+}
+
+/**
  * Build cache path for a given file. Returns [cachePath, pathPrefix].
  */
 function getCachePath($relativePath, $mtime) {
@@ -166,9 +179,7 @@ if (isset($_GET['warm_cache'])) {
         exit;
     }
 
-    if (!is_dir($cacheDir)) {
-        mkdir($cacheDir, 0755, true);
-    }
+    ensureCacheDir();
 
     $converted = 0;
     $skipped = 0;
@@ -247,9 +258,7 @@ if (!$canConvert) {
 }
 
 // Cache
-if (!is_dir($cacheDir)) {
-    mkdir($cacheDir, 0755, true);
-}
+ensureCacheDir();
 
 $fileMtime = filemtime($realFile);
 list($cachePath, $pathPrefix) = getCachePath($requestedFile, $fileMtime);
