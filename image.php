@@ -191,6 +191,9 @@ if (isset($_GET['clear_cache'])) {
 // ─── Pre-convert all images: image.php?warm_cache=1&token=SECRET ───
 if (isset($_GET['warm_cache'])) {
     checkAdminToken();
+    set_time_limit(0); // No timeout - large sites can have hundreds of images
+    ini_set('memory_limit', '256M');
+
     if (!function_exists('imagecreatefromstring') || !function_exists('imagewebp')) {
         header('Content-Type: application/json');
         echo json_encode(['error' => 'GD with WebP support is required']);
@@ -199,10 +202,36 @@ if (isset($_GET['warm_cache'])) {
 
     ensureCacheDir();
 
+    // Stream progress in real-time so the browser doesn't timeout
+    header('Content-Type: text/plain; charset=utf-8');
+    header('X-Accel-Buffering: no'); // Disable Nginx/proxy buffering
+    if (function_exists('apache_setenv')) {
+        @apache_setenv('no-gzip', '1');
+    }
+    ini_set('output_buffering', 'off');
+    ini_set('zlib.output_compression', false);
+    ob_implicit_flush(true);
+    while (ob_get_level()) ob_end_flush();
+
+    // First pass: count total images
+    $totalImages = 0;
+    $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator(__DIR__));
+    foreach ($it as $file) {
+        if (!$file->isFile()) continue;
+        $ext = strtolower($file->getExtension());
+        if (!in_array($ext, $convertibleExts)) continue;
+        $rel = str_replace('\\', '/', ltrim(str_replace(realpath(__DIR__), '', $file->getRealPath()), '/\\'));
+        if (strpos($rel, '.image_cache') === 0) continue;
+        $totalImages++;
+    }
+
+    echo "Found $totalImages images to process...\n\n";
+    flush();
+
     $converted = 0;
     $skipped = 0;
-    $failed = 0;
     $savedBytes = 0;
+    $processed = 0;
 
     $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator(__DIR__));
     foreach ($it as $file) {
@@ -216,6 +245,7 @@ if (isset($_GET['warm_cache'])) {
 
         if (strpos($relativePath, '.image_cache') === 0) continue;
 
+        $processed++;
         $mtime = filemtime($realPath);
         list($cachePath, $pathPrefix) = getCachePath($relativePath, $mtime);
 
@@ -225,24 +255,30 @@ if (isset($_GET['warm_cache'])) {
         // Already cached
         if (is_file($cachePath)) {
             $skipped++;
+            echo "[$processed/$totalImages] CACHED: $relativePath\n";
+            flush();
             continue;
         }
 
         $originalSize = filesize($realPath);
         if (convertImage($realPath, $cachePath, $ext)) {
-            $savedBytes += ($originalSize - filesize($cachePath));
+            $webpSize = filesize($cachePath);
+            $savedBytes += ($originalSize - $webpSize);
             $converted++;
+            $pct = round((1 - $webpSize / $originalSize) * 100);
+            echo "[$processed/$totalImages] CONVERTED: $relativePath (-$pct%)\n";
         } else {
-            $skipped++; // WebP was larger or conversion failed — original will be served
+            $skipped++;
+            echo "[$processed/$totalImages] SKIPPED: $relativePath (WebP not smaller)\n";
         }
+        flush();
     }
 
-    header('Content-Type: application/json');
-    echo json_encode([
-        'converted' => $converted,
-        'skipped' => $skipped,
-        'saved_mb' => round($savedBytes / 1024 / 1024, 2),
-    ]);
+    $savedMb = round($savedBytes / 1024 / 1024, 2);
+    echo "\n--- Done ---\n";
+    echo "Converted: $converted\n";
+    echo "Skipped: $skipped\n";
+    echo "Saved: {$savedMb} MB\n";
     exit;
 }
 
