@@ -242,9 +242,10 @@ window.resetSpyAppState = function() {
   if (spyBtn) {
     spyBtn.classList.add('hidden');
   }
-  // Mark all spy data as needing reload
+  // Mark all spy data as needing reload and clear seen thinking
   if (window.SpyMessenger) {
     window.SpyMessenger.dataLoaded = false;
+    window.SpyMessenger.seenThinkingByConv = {};
   }
   if (window.SpyInstaPics) {
     window.SpyInstaPics.dataLoaded = false;
@@ -705,6 +706,10 @@ window.SpyMessenger = {
   // Reset on page reload / save load, preserved on app switch
   scrollPositions: {},     // { conversationKey: scrollTop }
   hasVisitedInSession: {}, // { conversationKey: true } - tracks if we've scrolled to new content
+
+  // Thinking triggers already seen (persisted in save)
+  // { conversationKey: Set of message indices }
+  seenThinkingByConv: {},
 
   /**
    * Preload data only (characters + conversations) without rendering UI
@@ -1743,6 +1748,12 @@ window.SpyMessenger = {
 
     // Handle thinking trigger (invisible element that triggers the overlay when scrolled into view)
     if (msg.kind === 'thinking') {
+      const convKey = conv.key;
+      const alreadySeen = this.seenThinkingByConv[convKey] && this.seenThinkingByConv[convKey].has(index);
+      if (alreadySeen) {
+        // Already seen — render as invisible placeholder, won't trigger overlay
+        return `<div class="spy-thinking-trigger" data-msg-index="${index}" data-thinking-seen="true"></div>`;
+      }
       const blocksData = encodeURIComponent(JSON.stringify(msg.blocks));
       return `<div class="spy-thinking-trigger" data-msg-index="${index}" data-thinking-blocks="${blocksData}" data-thinking-seen="false"></div>`;
     }
@@ -2085,6 +2096,7 @@ window.SpyMessenger = {
       vd.renderedRange = { start: newStart, end: newEnd };
 
       this.bindMediaEvents();
+      this.initThinkingObserver(); // Observe thinking triggers in newly appended messages
       requestAnimationFrame(() => {
         this.measureRenderedHeights(conv);
         // Re-observe sentinels
@@ -2177,6 +2189,7 @@ window.SpyMessenger = {
       vd.renderedRange = { start: newStart, end: newEnd };
 
       this.bindMediaEvents();
+      this.initThinkingObserver(); // Observe thinking triggers in newly prepended messages
       requestAnimationFrame(() => {
         // Restore scroll position
         const scrollHeightAfter = this.chatMessagesEl.scrollHeight;
@@ -2714,8 +2727,18 @@ window.SpyMessenger = {
    * Called when a thinking trigger scrolls into the middle of the view
    */
   onThinkingTriggerInView(triggerEl) {
-    // Mark as seen so it won't trigger again
+    // Mark as seen in DOM
     triggerEl.dataset.thinkingSeen = 'true';
+
+    // Persist in seenThinkingByConv so it survives re-renders and save/load
+    const msgIndex = parseInt(triggerEl.dataset.msgIndex, 10);
+    if (!isNaN(msgIndex) && this.currentConversation) {
+      const convKey = this.currentConversation.key;
+      if (!this.seenThinkingByConv[convKey]) {
+        this.seenThinkingByConv[convKey] = new Set();
+      }
+      this.seenThinkingByConv[convKey].add(msgIndex);
+    }
 
     // Stop observing this element
     if (this.thinkingObserver) {

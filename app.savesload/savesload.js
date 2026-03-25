@@ -181,13 +181,23 @@ window.SavesLoad = {
         }
 
         // Spy app state (sp=spy)
-        // u=unlocked, a=anchor, i=instaPosts, o=slutPosts, apps=spyAppsUnlocked
+        // u=unlocked, a=anchor, i=instaPosts, o=slutPosts, apps=spyAppsUnlocked, st=seenThinking
         progress.sp = {
             u: window.spyAppUnlocked || false,
             a: window.currentSpyAnchor || 0,
             i: [...(window.unlockedSpyInsta || [])],
             o: [...(window.unlockedSpySlut || [])],
-            apps: window.spyAppsUnlocked ? { ...window.spyAppsUnlocked } : { instapics: false, onlyslut: false }
+            apps: window.spyAppsUnlocked ? { ...window.spyAppsUnlocked } : { instapics: false, onlyslut: false },
+            st: window.SpyMessenger ? (() => {
+                const data = {};
+                const seen = window.SpyMessenger.seenThinkingByConv || {};
+                for (const key of Object.keys(seen)) {
+                    if (seen[key] instanceof Set && seen[key].size > 0) {
+                        data[key] = [...seen[key]];
+                    }
+                }
+                return Object.keys(data).length > 0 ? data : undefined;
+            })() : undefined
         };
 
         return progress;
@@ -537,6 +547,16 @@ window.SavesLoad = {
             window.unlockedSpyInsta = [...(sp.i || [])];
             window.unlockedSpySlut = [...(sp.o || [])];
             window.spyAppsUnlocked = sp.apps ? { ...sp.apps } : { instapics: false, onlyslut: false };
+
+            // Restore seen thinking triggers (always reset, even if save has no data)
+            if (window.SpyMessenger) {
+                window.SpyMessenger.seenThinkingByConv = {};
+                if (sp.st) {
+                    for (const key of Object.keys(sp.st)) {
+                        window.SpyMessenger.seenThinkingByConv[key] = new Set(sp.st[key]);
+                    }
+                }
+            }
 
             // Sync anchor to localStorage so setSpyAnchor and SpyApp open work correctly
             try {
