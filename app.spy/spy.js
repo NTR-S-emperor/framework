@@ -668,32 +668,16 @@ window.SpyMessenger = {
   lightboxOpen: false,
   lightboxType: null,
 
-  // Chunked loading configuration (for large conversations)
-  chunkedLoading: {
-    enabled: false,
-    chunkSize: 150,           // Messages per chunk
-    loadThreshold: 200,       // Pixels from edge to trigger load
-    loadedRange: { start: 0, end: 0 },  // Currently loaded message indices
-    totalMessages: 0,
-    isLoading: false,
-    scrollListener: null
-  },
-
-  // Virtual scrolling configuration (legacy - now using chunked loading)
+  // Virtual scrolling configuration - sentinel-based (aligned with MC Messenger)
   virtualScroll: {
     enabled: false,
-    buffer: 30,
-    estimatedHeights: {
-      text: 52,
-      image: 220,
-      video: 220,
-      audio: 60,
-      spacerMin: 8
-    },
-    cachedHeights: {},
-    visibleRange: { start: 0, end: 50 },
-    totalHeight: 0,
-    scrollTimeout: null
+    threshold: 200,          // Number of messages before enabling virtualization
+    windowSize: 100,         // Number of messages to render at once
+    bufferSize: 30,          // Extra messages to render above/below
+    sentinelObserver: null,  // IntersectionObserver for sentinel elements
+    isScrollingToAnchor: false,
+    isLoadingMore: false     // Prevent concurrent loads
+    // Per-conversation data is stored in conv.virtualData
   },
 
   // Colors for group participants (same as MC)
@@ -1562,392 +1546,79 @@ window.SpyMessenger = {
       return;
     }
 
-    // Reset chunked loading state
-    this.resetChunkedLoading();
+    // Reset virtual scroll state for fresh render
+    this.resetVirtualScroll();
 
-    // Check if we need chunked loading (300+ messages)
-    const useChunkedLoading = messages.length >= 300;
+    const totalMessages = messages.length;
+    const useVirtualScroll = totalMessages >= this.virtualScroll.threshold;
 
-    if (useChunkedLoading) {
-      // Use chunked loading for large conversations
-      this.renderChunkedMessages(conv, messages, isFirstVisit);
-    } else {
-      // Standard rendering for small conversations
-      this.chunkedLoading.enabled = false;
-      this.renderAllMessages(conv, messages, isFirstVisit);
-    }
-  },
+    if (useVirtualScroll) {
+      this.virtualScroll.enabled = true;
 
-  /**
-   * Render all messages (for small conversations < 100 messages)
-   * @param {Object} conv - The conversation object
-   * @param {Array} messages - The messages to render
-   * @param {boolean} isFirstVisit - If true, scroll to new content; otherwise restore position
-   */
-  renderAllMessages(conv, messages, isFirstVisit = true) {
-    let html = '';
-    let lastSender = null;
+      // Initialize virtual data for this conversation
+      const vd = this.initConversationVirtualData(conv);
 
-    for (let i = 0; i < messages.length; i++) {
-      html += this.createMessageHtml(messages[i], i, conv, lastSender);
-      lastSender = messages[i].sender;
-    }
-
-    this.chatMessagesEl.innerHTML = html;
-    this.bindMediaEvents();
-
-    // Determine scroll position
-    if (isFirstVisit) {
-      // First visit: scroll to the beginning of new content
-      const anchorIndex = this.findPreviousAnchorIndex(messages);
-      if (anchorIndex >= 0) {
-        // Find the separator element and scroll to it
-        const separatorEl = this.chatMessagesEl.querySelector(`.ms-separator[data-anchor="${this.previousAnchor}"]`);
-        if (separatorEl) {
-          // Scroll so the separator is at the top of the view
-          separatorEl.scrollIntoView({ behavior: 'instant', block: 'start' });
+      // Determine initial range
+      if (isFirstVisit) {
+        const anchorIndex = this.findPreviousAnchorIndex(messages);
+        if (anchorIndex >= 0) {
+          // Center the window around the anchor
+          const { windowSize } = this.virtualScroll;
+          const halfWindow = Math.floor(windowSize / 2);
+          const start = Math.max(0, anchorIndex - halfWindow);
+          const end = Math.min(totalMessages, start + windowSize);
+          vd.renderedRange = { start, end };
         } else {
-          // Fallback: scroll to top
-          this.chatMessagesEl.scrollTop = 0;
+          // Start from the beginning
+          vd.renderedRange = {
+            start: 0,
+            end: Math.min(totalMessages, this.virtualScroll.windowSize)
+          };
         }
       } else {
-        // No separator found: scroll to top (beginning of conversation)
-        this.chatMessagesEl.scrollTop = 0;
-      }
-    } else {
-      // Not first visit: restore saved position or scroll to bottom
-      const savedPosition = this.scrollPositions[conv.key];
-      if (savedPosition !== undefined) {
-        this.chatMessagesEl.scrollTop = savedPosition;
-      } else {
-        this.chatMessagesEl.scrollTop = this.chatMessagesEl.scrollHeight;
-      }
-    }
-
-    // Initialize thinking observer after messages are rendered
-    this.initThinkingObserver();
-  },
-
-  /**
-   * Reset chunked loading state
-   */
-  resetChunkedLoading() {
-    // Remove existing scroll listener
-    if (this.chunkedLoading.scrollListener && this.chatMessagesEl) {
-      this.chatMessagesEl.removeEventListener('scroll', this.chunkedLoading.scrollListener);
-    }
-
-    this.chunkedLoading.enabled = false;
-    this.chunkedLoading.loadedRange = { start: 0, end: 0 };
-    this.chunkedLoading.totalMessages = 0;
-    this.chunkedLoading.isLoading = false;
-    this.chunkedLoading.scrollListener = null;
-  },
-
-  /**
-   * Render messages with chunked loading (for large conversations)
-   * Loads a chunk around the anchor point, with "load more" triggers at edges
-   */
-  renderChunkedMessages(conv, messages, isFirstVisit = true) {
-    this.chunkedLoading.enabled = true;
-    this.chunkedLoading.totalMessages = messages.length;
-
-    const chunkSize = this.chunkedLoading.chunkSize;
-
-    // Determine initial chunk based on anchor
-    let centerIndex;
-    if (isFirstVisit) {
-      const anchorIndex = this.findPreviousAnchorIndex(messages);
-      centerIndex = anchorIndex >= 0 ? anchorIndex : 0;
-    } else {
-      // Use middle of current range or start
-      centerIndex = this.chunkedLoading.loadedRange.start || 0;
-    }
-
-    // Calculate chunk boundaries
-    const halfChunk = Math.floor(chunkSize / 2);
-    let start = Math.max(0, centerIndex - halfChunk);
-    let end = Math.min(messages.length, start + chunkSize);
-
-    // Adjust start if we hit the end
-    if (end === messages.length) {
-      start = Math.max(0, end - chunkSize);
-    }
-
-    this.chunkedLoading.loadedRange = { start, end };
-
-    // Build HTML
-    let html = '';
-
-    // Add "load older" trigger if there are older messages
-    if (start > 0) {
-      html += `<div class="spy-load-more spy-load-more--top" data-direction="top">
-        <div class="spy-load-more-spinner"></div>
-        <span class="spy-load-more-text">${start} anciens messages</span>
-      </div>`;
-    }
-
-    // Render messages in the chunk
-    let lastSender = start > 0 ? messages[start - 1]?.sender : null;
-    for (let i = start; i < end; i++) {
-      html += this.createMessageHtml(messages[i], i, conv, lastSender);
-      lastSender = messages[i].sender;
-    }
-
-    // Add "load newer" trigger if there are newer messages
-    if (end < messages.length) {
-      const remaining = messages.length - end;
-      html += `<div class="spy-load-more spy-load-more--bottom" data-direction="bottom">
-        <div class="spy-load-more-spinner"></div>
-        <span class="spy-load-more-text">${remaining} nouveaux messages</span>
-      </div>`;
-    }
-
-    this.chatMessagesEl.innerHTML = html;
-    this.bindMediaEvents();
-
-    // Set initial scroll position
-    if (isFirstVisit) {
-      const anchorIndex = this.findPreviousAnchorIndex(messages);
-      if (anchorIndex >= 0) {
-        const separatorEl = this.chatMessagesEl.querySelector(`.ms-separator[data-anchor="${this.previousAnchor}"]`);
-        if (separatorEl) {
-          separatorEl.scrollIntoView({ behavior: 'instant', block: 'start' });
-        } else {
-          this.chatMessagesEl.scrollTop = 0;
+        // Restore previous range or default to beginning
+        if (!vd.renderedRange || (vd.renderedRange.start === 0 && vd.renderedRange.end === 0)) {
+          vd.renderedRange = {
+            start: 0,
+            end: Math.min(totalMessages, this.virtualScroll.windowSize)
+          };
         }
-      } else {
-        this.chatMessagesEl.scrollTop = 0;
       }
+
+      // Setup sentinel observer
+      this.setupSentinelObserver();
+
+      // Render virtualized messages
+      this.renderVirtualizedMessages(conv, isFirstVisit);
     } else {
-      const savedPosition = this.scrollPositions[conv.key];
-      if (savedPosition !== undefined) {
-        this.chatMessagesEl.scrollTop = savedPosition;
-      }
-    }
+      // Standard rendering for small conversations (no virtualization)
+      this.virtualScroll.enabled = false;
 
-    // Initialize scroll listener for loading more
-    this.initChunkedScrollListener();
-
-    // Initialize thinking observer
-    this.initThinkingObserver();
-  },
-
-  /**
-   * Initialize scroll listener for chunked loading
-   */
-  initChunkedScrollListener() {
-    if (!this.chatMessagesEl) return;
-
-    // Remove existing listener
-    if (this.chunkedLoading.scrollListener) {
-      this.chatMessagesEl.removeEventListener('scroll', this.chunkedLoading.scrollListener);
-    }
-
-    this.chunkedLoading.scrollListener = () => {
-      if (!this.chunkedLoading.enabled || this.chunkedLoading.isLoading) return;
-      if (this.thinking.active) return;
-
-      const el = this.chatMessagesEl;
-      const threshold = this.chunkedLoading.loadThreshold;
-      const { start, end } = this.chunkedLoading.loadedRange;
-      const total = this.chunkedLoading.totalMessages;
-
-      // Check if near top (load older)
-      if (el.scrollTop < threshold && start > 0) {
-        this.loadMoreMessages('top');
-      }
-      // Check if near bottom (load newer)
-      else if (el.scrollHeight - el.scrollTop - el.clientHeight < threshold && end < total) {
-        this.loadMoreMessages('bottom');
-      }
-    };
-
-    this.chatMessagesEl.addEventListener('scroll', this.chunkedLoading.scrollListener, { passive: true });
-  },
-
-  /**
-   * Load more messages in the specified direction
-   */
-  loadMoreMessages(direction) {
-    if (this.chunkedLoading.isLoading) return;
-    if (!this.currentConversation) return;
-
-    this.chunkedLoading.isLoading = true;
-    const messages = this.currentConversation.messages;
-    const chunkSize = this.chunkedLoading.chunkSize;
-    let { start, end } = this.chunkedLoading.loadedRange;
-
-    // Show loading state
-    const loadMoreEl = this.chatMessagesEl.querySelector(`.spy-load-more--${direction}`);
-    if (loadMoreEl) {
-      loadMoreEl.classList.add('spy-load-more--loading');
-    }
-
-    // Save scroll position reference
-    const scrollHeightBefore = this.chatMessagesEl.scrollHeight;
-    const scrollTopBefore = this.chatMessagesEl.scrollTop;
-
-    // Small delay to show the loading spinner
-    setTimeout(() => {
-      if (direction === 'top') {
-        // Load older messages
-        const newStart = Math.max(0, start - chunkSize);
-        start = newStart;
-      } else {
-        // Load newer messages
-        const newEnd = Math.min(messages.length, end + chunkSize);
-        end = newEnd;
-      }
-
-      this.chunkedLoading.loadedRange = { start, end };
-
-      // Re-render with new range
-      let html = '';
-
-      // Add "load older" trigger
-      if (start > 0) {
-        html += `<div class="spy-load-more spy-load-more--top" data-direction="top">
-          <div class="spy-load-more-spinner"></div>
-          <span class="spy-load-more-text">${start} anciens messages</span>
-        </div>`;
-      }
-
-      // Render messages
-      let lastSender = start > 0 ? messages[start - 1]?.sender : null;
-      for (let i = start; i < end; i++) {
-        html += this.createMessageHtml(messages[i], i, this.currentConversation, lastSender);
+      this.chatMessagesEl.innerHTML = '';
+      let lastSender = null;
+      for (let i = 0; i < totalMessages; i++) {
+        const html = this.createMessageHtml(messages[i], i, conv, lastSender);
+        this.chatMessagesEl.insertAdjacentHTML('beforeend', html);
         lastSender = messages[i].sender;
       }
 
-      // Add "load newer" trigger
-      if (end < messages.length) {
-        const remaining = messages.length - end;
-        html += `<div class="spy-load-more spy-load-more--bottom" data-direction="bottom">
-          <div class="spy-load-more-spinner"></div>
-          <span class="spy-load-more-text">${remaining} nouveaux messages</span>
-        </div>`;
-      }
-
-      this.chatMessagesEl.innerHTML = html;
       this.bindMediaEvents();
 
-      // Restore scroll position
-      if (direction === 'top') {
-        // Adjust scroll to keep the same content visible
-        const scrollHeightAfter = this.chatMessagesEl.scrollHeight;
-        const heightDiff = scrollHeightAfter - scrollHeightBefore;
-        this.chatMessagesEl.scrollTop = scrollTopBefore + heightDiff;
+      // Scroll position
+      if (isFirstVisit) {
+        this.scrollToAnchorOrTop(conv);
       } else {
-        // Keep same scroll position for bottom loading
-        this.chatMessagesEl.scrollTop = scrollTopBefore;
-      }
-
-      this.chunkedLoading.isLoading = false;
-      this.initThinkingObserver();
-    }, 150); // Small delay for visual feedback
-  },
-
-  /**
-   * Render messages with virtual scrolling (for large conversations)
-   * @param {Object} conv - The conversation object
-   * @param {Array} messages - The messages to render
-   * @param {Array} cumulativeHeights - Pre-calculated heights for virtual scrolling
-   * @param {boolean} scrollToEnd - Legacy parameter (ignored when isFirstVisit is specified)
-   * @param {boolean} isFirstVisit - If true, scroll to new content; otherwise restore position
-   */
-  renderVirtualMessages(conv, messages, cumulativeHeights, scrollToEnd = false, isFirstVisit = true) {
-    // Legacy: now using chunked loading instead
-    if (messages.length < 500) {
-      this.virtualScroll.enabled = false;
-      return false;
-    }
-
-    this.virtualScroll.enabled = true;
-
-    // For first visit, adjust visible range to show the anchor separator
-    if (isFirstVisit) {
-      const anchorIndex = this.findPreviousAnchorIndex(messages);
-      if (anchorIndex >= 0) {
-        // Set visible range to start from the anchor
-        const buffer = this.virtualScroll.buffer;
-        this.virtualScroll.visibleRange = {
-          start: Math.max(0, anchorIndex - buffer),
-          end: Math.min(messages.length, anchorIndex + 50 + buffer)
-        };
-      } else {
-        // No anchor found, start from beginning
-        const buffer = this.virtualScroll.buffer;
-        this.virtualScroll.visibleRange = {
-          start: 0,
-          end: Math.min(messages.length, 50 + buffer)
-        };
-      }
-    }
-
-    const { start, end } = this.virtualScroll.visibleRange;
-    const totalHeight = this.virtualScroll.totalHeight;
-
-    // Calculate spacer heights
-    const topSpacerHeight = start > 0 ? cumulativeHeights[start] : 0;
-    const bottomSpacerHeight = end < messages.length
-      ? totalHeight - cumulativeHeights[end]
-      : 0;
-
-    // Build HTML
-    let html = '';
-
-    // Top spacer
-    if (topSpacerHeight > 0) {
-      html += `<div class="ms-virtual-spacer ms-virtual-spacer--top" style="height:${topSpacerHeight}px"></div>`;
-    }
-
-    // Visible messages
-    let lastSender = start > 0 ? messages[start - 1].sender : null;
-    for (let i = start; i < end && i < messages.length; i++) {
-      html += this.createMessageHtml(messages[i], i, conv, lastSender);
-      lastSender = messages[i].sender;
-    }
-
-    // Bottom spacer
-    if (bottomSpacerHeight > 0) {
-      html += `<div class="ms-virtual-spacer ms-virtual-spacer--bottom" style="height:${bottomSpacerHeight}px"></div>`;
-    }
-
-    this.chatMessagesEl.innerHTML = html;
-    this.bindMediaEvents();
-
-    // Measure and cache actual heights of rendered messages
-    this.measureRenderedHeights(start, end);
-
-    // Determine scroll position
-    if (isFirstVisit) {
-      const anchorIndex = this.findPreviousAnchorIndex(messages);
-      if (anchorIndex >= 0) {
-        // Find the separator element and scroll to it
-        const separatorEl = this.chatMessagesEl.querySelector(`.ms-separator[data-anchor="${this.previousAnchor}"]`);
-        if (separatorEl) {
-          separatorEl.scrollIntoView({ behavior: 'instant', block: 'start' });
+        const savedPosition = this.scrollPositions[conv.key];
+        if (savedPosition !== undefined) {
+          this.chatMessagesEl.scrollTop = savedPosition;
         } else {
           this.chatMessagesEl.scrollTop = 0;
         }
-      } else {
-        this.chatMessagesEl.scrollTop = 0;
       }
-    } else {
-      // Not first visit: restore saved position
-      const savedPosition = this.scrollPositions[conv.key];
-      if (savedPosition !== undefined) {
-        this.chatMessagesEl.scrollTop = savedPosition;
-      } else if (scrollToEnd) {
-        this.chatMessagesEl.scrollTop = this.chatMessagesEl.scrollHeight;
-      }
+
+      // Initialize thinking observer after messages are rendered
+      this.initThinkingObserver();
     }
-
-    // Initialize thinking observer after messages are rendered
-    this.initThinkingObserver();
-
-    return true;
   },
 
   /**
@@ -2081,229 +1752,295 @@ window.SpyMessenger = {
     return `<div class="ms-msg ${sideClass} ${firstClass}" data-msg-index="${index}">${avatarHtml}<div class="${bubbleClass}">${bubbleContent}${reactionsHtml}</div></div>`;
   },
 
-  /**
-   * Initialize virtual scroll listener
-   */
-  initVirtualScroll() {
-    if (!this.chatMessagesEl) return;
-
-    // Remove existing listener
-    if (this._boundVirtualScroll) {
-      this.chatMessagesEl.removeEventListener('scroll', this._boundVirtualScroll);
-    }
-
-    this._boundVirtualScroll = this.onVirtualScroll.bind(this);
-    this.chatMessagesEl.addEventListener('scroll', this._boundVirtualScroll, { passive: true });
-  },
+  // ── Virtual scrolling system (sentinel-based, aligned with MC Messenger) ──
 
   /**
-   * Handle scroll event for virtual scrolling
-   * Note: Dynamic re-rendering during scroll is disabled to prevent jumpiness.
-   * We render a large enough chunk initially and let the user scroll freely.
+   * Scroll to anchor separator or top of conversation
    */
-  onVirtualScroll() {
-    // Disabled: dynamic re-rendering causes scroll jumps
-    // The initial render includes enough messages with large buffer
-    return;
-  },
-
-  /**
-   * Update visible range based on scroll position
-   */
-  updateVirtualScroll() {
-    if (!this.chatMessagesEl || !this.currentConversation) return;
-
-    const messages = this.currentConversation.messages;
-    if (!messages || messages.length === 0) return;
-
-    const scrollTop = this.chatMessagesEl.scrollTop;
-    const containerHeight = this.chatMessagesEl.clientHeight;
-    const cumulativeHeights = this.calculateCumulativeHeights(messages);
-
-    const newRange = this.calculateVisibleRange(scrollTop, containerHeight, cumulativeHeights, messages.length);
-
-    // Check if range changed
-    const currentRange = this.virtualScroll.visibleRange;
-    if (newRange.start === currentRange.start && newRange.end === currentRange.end) {
-      return;
-    }
-
-    // Save scroll position before re-render
-    const savedScrollTop = this.chatMessagesEl.scrollTop;
-
-    this.virtualScroll.visibleRange = newRange;
-
-    // Recalculate cumulative heights with current cached values
-    const newCumulativeHeights = this.calculateCumulativeHeights(messages);
-
-    // Pass isFirstVisit = false to prevent scroll reset
-    this.renderVirtualMessages(this.currentConversation, messages, newCumulativeHeights, false, false);
-
-    // Simply restore the scroll position - the cached heights will improve accuracy over time
-    this.chatMessagesEl.scrollTop = savedScrollTop;
-  },
-
-  /**
-   * Measure and cache actual heights of rendered messages
-   */
-  measureRenderedHeights(start, end) {
-    if (!this.chatMessagesEl) return;
-
-    // Select all message types including separators, buttons, and thinking triggers
-    const messages = this.chatMessagesEl.querySelectorAll('.ms-msg, .ms-separator, .spy-next-content-button, .spy-thinking-trigger');
-    let msgIndex = start;
-
-    messages.forEach(el => {
-      // Skip spacers
-      if (el.classList.contains('ms-virtual-spacer')) return;
-
-      // Get the actual height including margins
-      const rect = el.getBoundingClientRect();
-      const style = window.getComputedStyle(el);
-      const marginTop = parseFloat(style.marginTop) || 0;
-      const marginBottom = parseFloat(style.marginBottom) || 0;
-      const actualHeight = rect.height + marginTop + marginBottom;
-
-      // Cache the actual height
-      if (msgIndex < end && actualHeight > 0) {
-        this.virtualScroll.cachedHeights[msgIndex] = actualHeight;
+  scrollToAnchorOrTop(conv) {
+    const messages = conv.messages || [];
+    const anchorIndex = this.findPreviousAnchorIndex(messages);
+    if (anchorIndex >= 0) {
+      const separatorEl = this.chatMessagesEl.querySelector(`.ms-separator[data-anchor="${this.previousAnchor}"]`);
+      if (separatorEl) {
+        this.virtualScroll.isScrollingToAnchor = true;
+        separatorEl.scrollIntoView({ behavior: 'instant', block: 'start' });
+        // Unblock after layout settles
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            this.virtualScroll.isScrollingToAnchor = false;
+          });
+        });
+        return;
       }
-      msgIndex++;
+    }
+    this.chatMessagesEl.scrollTop = 0;
+  },
+
+  /**
+   * Initialize virtual scroll data for a conversation (per-conversation storage)
+   */
+  initConversationVirtualData(conv) {
+    if (!conv.virtualData) {
+      conv.virtualData = {
+        measuredHeights: {},      // messageIndex -> measured height in pixels
+        renderedRange: { start: 0, end: 0 },
+        scrollPosition: 0        // Saved scroll position when switching conversations
+      };
+    }
+    return conv.virtualData;
+  },
+
+  /**
+   * Get the average message height from measured heights (for spacer estimation)
+   */
+  getAverageMessageHeight(conv) {
+    const vd = conv.virtualData;
+    if (!vd || !vd.measuredHeights) return 60; // Default estimate
+
+    const heights = Object.values(vd.measuredHeights);
+    if (heights.length === 0) return 60;
+
+    const sum = heights.reduce((a, b) => a + b, 0);
+    return sum / heights.length;
+  },
+
+  /**
+   * Measure and cache heights of rendered messages
+   */
+  measureRenderedHeights(conv) {
+    if (!this.chatMessagesEl || !conv.virtualData) return;
+
+    const vd = conv.virtualData;
+    const messageEls = this.chatMessagesEl.querySelectorAll('[data-msg-index], .ms-separator, .spy-next-content-button, .spy-end-content-marker, .spy-thinking-trigger');
+
+    messageEls.forEach(el => {
+      const index = parseInt(el.dataset.msgIndex, 10);
+      if (!isNaN(index) && vd.measuredHeights[index] === undefined) {
+        const style = window.getComputedStyle(el);
+        const marginTop = parseFloat(style.marginTop) || 0;
+        const marginBottom = parseFloat(style.marginBottom) || 0;
+        vd.measuredHeights[index] = el.offsetHeight + marginTop + marginBottom;
+      }
     });
-
-    // Note: Don't recalculate total height here during scroll updates
-    // It will be recalculated on next conversation load to keep scroll stable
   },
 
   /**
-   * Recalculate total height using cached actual heights where available
+   * Calculate spacer height based on measured or estimated heights
    */
-  recalculateTotalHeight() {
-    if (!this.currentConversation || !this.currentConversation.messages) return;
+  calculateSpacerHeight(conv, fromIdx, toIdx) {
+    if (fromIdx >= toIdx) return 0;
 
-    const messages = this.currentConversation.messages;
-    let total = 0;
+    const vd = conv.virtualData;
+    const avgHeight = this.getAverageMessageHeight(conv);
+    let height = 0;
 
-    for (let i = 0; i < messages.length; i++) {
-      total += this.estimateMessageHeight(messages[i], i);
-    }
-
-    this.virtualScroll.totalHeight = total;
-  },
-
-  /**
-   * Estimate message height
-   */
-  estimateMessageHeight(msg, index) {
-    if (this.virtualScroll.cachedHeights[index] !== undefined) {
-      return this.virtualScroll.cachedHeights[index];
-    }
-
-    // Thinking triggers have no visual height
-    if (msg.kind === 'thinking') {
-      return 0;
-    }
-
-    // Separators have minimal height
-    if (msg.type === 'separator') {
-      return 40;
-    }
-
-    // Next content button has a fixed height
-    if (msg.type === 'next_content_button') {
-      return 56;
-    }
-
-    // End content marker has a fixed height
-    if (msg.type === 'end_content_marker') {
-      return 56;
-    }
-
-    const heights = this.virtualScroll.estimatedHeights;
-    let height = heights.spacerMin;
-
-    if (msg.deleted) {
-      height += 40;
-    } else if (msg.kind === 'image') {
-      height += heights.image;
-    } else if (msg.kind === 'video') {
-      height += heights.video;
-    } else if (msg.kind === 'audio') {
-      height += heights.audio;
-    } else {
-      height += heights.text;
+    for (let i = fromIdx; i < toIdx; i++) {
+      height += vd.measuredHeights[i] !== undefined
+        ? vd.measuredHeights[i]
+        : avgHeight;
     }
 
     return height;
   },
 
   /**
-   * Calculate cumulative heights for all messages
+   * Setup IntersectionObserver for sentinel elements
+   * Sentinels are placed at top and bottom of the message container
+   * When they become visible, we load more messages in that direction
    */
-  calculateCumulativeHeights(messages) {
-    const heights = [0];
-    let cumulative = 0;
-
-    for (let i = 0; i < messages.length; i++) {
-      cumulative += this.estimateMessageHeight(messages[i], i);
-      heights.push(cumulative);
+  setupSentinelObserver() {
+    // Cleanup existing observer
+    if (this.virtualScroll.sentinelObserver) {
+      this.virtualScroll.sentinelObserver.disconnect();
     }
 
-    this.virtualScroll.totalHeight = cumulative;
-    return heights;
+    if (!this.chatMessagesEl) return;
+
+    const options = {
+      root: this.chatMessagesEl,
+      rootMargin: '200px 0px', // Load before sentinel is actually visible
+      threshold: 0
+    };
+
+    this.virtualScroll.sentinelObserver = new IntersectionObserver((entries) => {
+      if (this.virtualScroll.isScrollingToAnchor || this.virtualScroll.isLoadingMore) return;
+      if (this.thinking.active) return;
+
+      const conv = this.currentConversation;
+      if (!conv || !conv.virtualData) return;
+
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+
+        if (entry.target.classList.contains('ms-sentinel-top')) {
+          this.loadMoreMessages('up', conv);
+        } else if (entry.target.classList.contains('ms-sentinel-bottom')) {
+          this.loadMoreMessages('down', conv);
+        }
+      }
+    }, options);
   },
 
   /**
-   * Calculate visible range based on scroll position
+   * Load more messages in the specified direction
+   * @param {'up' | 'down'} direction - Direction to load messages
+   * @param {Object} conv - The conversation object
    */
-  calculateVisibleRange(scrollTop, containerHeight, cumulativeHeights, totalMessages) {
-    const buffer = this.virtualScroll.buffer;
+  loadMoreMessages(direction, conv) {
+    if (!conv.virtualData || !conv.messages) return;
+    if (this.virtualScroll.isLoadingMore) return;
 
-    // Binary search to find start index
-    let start = 0;
-    let end = totalMessages - 1;
+    const vd = conv.virtualData;
+    const totalMessages = conv.messages.length;
+    const { windowSize, bufferSize } = this.virtualScroll;
+    const { start, end } = vd.renderedRange;
 
-    while (start < end) {
-      const mid = Math.floor((start + end) / 2);
-      if (cumulativeHeights[mid + 1] < scrollTop) {
-        start = mid + 1;
-      } else {
-        end = mid;
+    let newStart = start;
+    let newEnd = end;
+
+    if (direction === 'up' && start > 0) {
+      newStart = Math.max(0, start - bufferSize);
+      if (newEnd - newStart > windowSize + bufferSize * 2) {
+        newEnd = newStart + windowSize + bufferSize;
       }
+    } else if (direction === 'down' && end < totalMessages) {
+      newEnd = Math.min(totalMessages, end + bufferSize);
+      if (newEnd - newStart > windowSize + bufferSize * 2) {
+        newStart = newEnd - windowSize - bufferSize;
+      }
+    } else {
+      return; // Nothing to load
     }
 
-    const visibleStart = Math.max(0, start - buffer);
+    // Check if range actually changed
+    if (newStart === start && newEnd === end) return;
 
-    // Find end index
-    const viewportEnd = scrollTop + containerHeight;
-    start = 0;
-    end = totalMessages - 1;
+    this.virtualScroll.isLoadingMore = true;
 
-    while (start < end) {
-      const mid = Math.floor((start + end) / 2);
-      if (cumulativeHeights[mid] < viewportEnd) {
-        start = mid + 1;
-      } else {
-        end = mid;
-      }
+    // Save scroll position before modifying DOM
+    const scrollTop = this.chatMessagesEl.scrollTop;
+    const scrollHeight = this.chatMessagesEl.scrollHeight;
+
+    // Update rendered range
+    vd.renderedRange = { start: newStart, end: newEnd };
+
+    // Re-render with new range (don't scroll to anchor)
+    this.renderVirtualizedMessages(conv, false);
+
+    // Restore scroll position if loading at top
+    if (direction === 'up') {
+      requestAnimationFrame(() => {
+        const newScrollHeight = this.chatMessagesEl.scrollHeight;
+        const addedHeight = newScrollHeight - scrollHeight;
+        this.chatMessagesEl.scrollTop = scrollTop + addedHeight;
+        this.virtualScroll.isLoadingMore = false;
+      });
+    } else {
+      this.virtualScroll.isLoadingMore = false;
     }
-
-    const visibleEnd = Math.min(totalMessages, start + buffer);
-
-    return { start: visibleStart, end: visibleEnd };
   },
 
   /**
-   * Reset virtual scroll state
+   * Render messages with virtualization using sentinel-based approach
+   * @param {Object} conv - The conversation object
+   * @param {boolean} isFirstVisit - If true, scroll to anchor; otherwise preserve position
+   */
+  renderVirtualizedMessages(conv, isFirstVisit = true) {
+    if (!this.chatMessagesEl || !conv.messages) return;
+
+    const messages = conv.messages;
+    const totalMessages = messages.length;
+
+    const vd = this.initConversationVirtualData(conv);
+    const { start, end } = vd.renderedRange;
+
+    // Clear container
+    this.chatMessagesEl.innerHTML = '';
+
+    // Disconnect observer while modifying DOM
+    if (this.virtualScroll.sentinelObserver) {
+      this.virtualScroll.sentinelObserver.disconnect();
+    }
+
+    // Top sentinel (for loading older messages)
+    if (start > 0) {
+      const topSentinel = document.createElement('div');
+      topSentinel.className = 'ms-sentinel ms-sentinel-top';
+      this.chatMessagesEl.appendChild(topSentinel);
+    }
+
+    // Top spacer for messages above rendered range
+    const topSpacerHeight = this.calculateSpacerHeight(conv, 0, start);
+    if (topSpacerHeight > 0) {
+      const topSpacer = document.createElement('div');
+      topSpacer.className = 'ms-virtual-spacer ms-virtual-spacer--top';
+      topSpacer.style.height = topSpacerHeight + 'px';
+      this.chatMessagesEl.appendChild(topSpacer);
+    }
+
+    // Render visible messages
+    let lastSender = start > 0 ? messages[start - 1]?.sender : null;
+    for (let i = start; i < end && i < totalMessages; i++) {
+      const html = this.createMessageHtml(messages[i], i, conv, lastSender);
+      this.chatMessagesEl.insertAdjacentHTML('beforeend', html);
+      lastSender = messages[i].sender;
+    }
+
+    // Bottom spacer for messages below rendered range
+    const bottomSpacerHeight = this.calculateSpacerHeight(conv, end, totalMessages);
+    if (bottomSpacerHeight > 0) {
+      const bottomSpacer = document.createElement('div');
+      bottomSpacer.className = 'ms-virtual-spacer ms-virtual-spacer--bottom';
+      bottomSpacer.style.height = bottomSpacerHeight + 'px';
+      this.chatMessagesEl.appendChild(bottomSpacer);
+    }
+
+    // Bottom sentinel (for loading newer messages)
+    if (end < totalMessages) {
+      const bottomSentinel = document.createElement('div');
+      bottomSentinel.className = 'ms-sentinel ms-sentinel-bottom';
+      this.chatMessagesEl.appendChild(bottomSentinel);
+    }
+
+    this.bindMediaEvents();
+
+    // Measure heights after render
+    requestAnimationFrame(() => {
+      this.measureRenderedHeights(conv);
+
+      // Re-observe sentinels
+      if (this.virtualScroll.sentinelObserver) {
+        const topSentinel = this.chatMessagesEl.querySelector('.ms-sentinel-top');
+        const bottomSentinel = this.chatMessagesEl.querySelector('.ms-sentinel-bottom');
+        if (topSentinel) this.virtualScroll.sentinelObserver.observe(topSentinel);
+        if (bottomSentinel) this.virtualScroll.sentinelObserver.observe(bottomSentinel);
+      }
+    });
+
+    // Scroll position
+    if (isFirstVisit) {
+      this.scrollToAnchorOrTop(conv);
+    } else {
+      const savedPosition = this.scrollPositions[conv.key];
+      if (savedPosition !== undefined) {
+        this.chatMessagesEl.scrollTop = savedPosition;
+      }
+    }
+
+    // Initialize thinking observer after messages are rendered
+    this.initThinkingObserver();
+  },
+
+  /**
+   * Reset virtual scroll state (call when changing conversation)
+   * Note: Per-conversation data (virtualData) is preserved on the conv object
    */
   resetVirtualScroll() {
-    this.virtualScroll.cachedHeights = {};
-    this.virtualScroll.visibleRange = { start: 0, end: 50 };
-    this.virtualScroll.totalHeight = 0;
     this.virtualScroll.enabled = false;
-    if (this.virtualScroll.scrollTimeout) {
-      clearTimeout(this.virtualScroll.scrollTimeout);
-      this.virtualScroll.scrollTimeout = null;
+    this.virtualScroll.isLoadingMore = false;
+    if (this.virtualScroll.sentinelObserver) {
+      this.virtualScroll.sentinelObserver.disconnect();
     }
   },
 
