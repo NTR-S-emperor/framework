@@ -141,7 +141,9 @@ window.SavesLoad = {
         if (window.Messenger) {
             // m=messenger, u=unlockedFiles, i=instaPosts, o=slutOnlyPosts, k=selectedKey, c=conversations
             // w=contactsWithNew, l=contactLastActivity, a=activeConversationKey, ch=conversationHistory
+            // ht=highestPassedTier (for paywall verification on save load)
             progress.m = {
+                ht: window.Messenger.highestPassedTier || null,
                 u: [...(window.Messenger.unlockedFiles || ['start.txt'])],
                 i: [...(window.Messenger.unlockedInstaPosts || [])],
                 o: [...(window.Messenger.unlockedSlutOnlyPosts || [])],
@@ -308,12 +310,109 @@ window.SavesLoad = {
             this.restoreStorySettings(state.storySettings);
         }
 
-        // 3. Restore story progression
+        // 3. Check paywall tier before restoring progression
+        if (opts.restoreProgress && state.progress?.m?.ht) {
+            const requiredTier = state.progress.m.ht;
+            const hasAccess = await this.verifyTierAccess(requiredTier);
+            if (!hasAccess) {
+                // User doesn't have a valid code — abort load
+                return false;
+            }
+        }
+
+        // 4. Restore story progression
         if (opts.restoreProgress) {
             await this.restoreProgress(state.progress);
         }
 
         return true;
+    },
+
+    /**
+     * Verify that the user has access to a required tier before loading a save.
+     * Checks stored codes via the API. If no valid code, shows the lock modal.
+     * @param {string} requiredTier - The tier required (e.g. 'BRONZE', 'GOLD')
+     * @returns {Promise<boolean>} true if access granted, false if denied
+     */
+    async verifyTierAccess(requiredTier) {
+        if (!window.Messenger) return true;
+
+        // First check if user already has a valid code stored
+        const verification = await window.Messenger.verifyStoredCodes(requiredTier);
+        if (verification.valid) return true;
+
+        // No valid code — show lock modal and wait for user input
+        return new Promise((resolve) => {
+            const modal = document.getElementById('lockModal');
+            if (!modal) { resolve(false); return; }
+
+            const tierLabel = document.getElementById('lockTierLabel');
+            const input = document.getElementById('lockCodeInput');
+            const errorEl = document.getElementById('lockError');
+            const confirmBtn = document.getElementById('lockConfirmBtn');
+            const cancelBtn = document.getElementById('lockCancelBtn');
+
+            if (tierLabel) {
+                tierLabel.textContent = requiredTier;
+                tierLabel.className = 'lock-tier-badge lock-tier-' + requiredTier.toLowerCase();
+            }
+            if (input) input.value = '';
+            if (errorEl) errorEl.textContent = '';
+
+            modal.classList.remove('hidden');
+            if (input) input.focus();
+
+            // Cleanup previous handlers
+            const cleanup = () => {
+                if (confirmBtn) confirmBtn.removeEventListener('click', onConfirm);
+                if (cancelBtn) cancelBtn.removeEventListener('click', onCancel);
+                if (input) input.removeEventListener('keydown', onKeydown);
+                modal.classList.add('hidden');
+            };
+
+            const onCancel = () => { cleanup(); resolve(false); };
+
+            const onConfirm = async () => {
+                const code = (input?.value || '').trim().toUpperCase();
+                if (!code) {
+                    if (errorEl) errorEl.textContent = window.Translations ? window.Translations.get('lock.enter_code') : 'Please enter a code';
+                    return;
+                }
+
+                if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = '...'; }
+
+                try {
+                    const response = await fetch(window.Messenger.LOCK_API_URL + '?action=verify', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ code, tier: requiredTier })
+                    });
+                    const result = await response.json();
+
+                    if (result.success) {
+                        window.Messenger.saveTier(code, result.tier);
+                        cleanup();
+                        resolve(true);
+                    } else {
+                        if (errorEl) {
+                            errorEl.textContent = result.error === 'Tier insufficient'
+                                ? `Code "${result.codeTier}" insufficient. Requires ${result.requiredTier} or higher.`
+                                : (result.error || 'Invalid code');
+                        }
+                    }
+                } catch (e) {
+                    if (errorEl) errorEl.textContent = 'Connection error. Please try again.';
+                } finally {
+                    if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = window.Translations ? window.Translations.get('btn.confirm') : 'Confirm'; }
+                }
+            };
+
+            const onKeydown = (e) => { if (e.key === 'Enter') onConfirm(); };
+
+            if (confirmBtn) confirmBtn.addEventListener('click', onConfirm);
+            if (cancelBtn) cancelBtn.addEventListener('click', onCancel);
+            if (input) input.addEventListener('keydown', onKeydown);
+        });
     },
 
     /**
@@ -443,6 +542,9 @@ window.SavesLoad = {
         if (!progressData?.m || !window.Messenger) return;
 
         const m = progressData.m;
+
+        // Restore highest passed tier
+        window.Messenger.highestPassedTier = m.ht || null;
         const savedUnlockedFiles = [...(m.u || ['start.txt'])];
 
         // Save state to restore AFTER reloadData
@@ -706,11 +808,17 @@ window.SavesLoad = {
         }
 
         if (save.data) {
-            await this.restoreGameState(save.data, {
+            const success = await this.restoreGameState(save.data, {
                 restoreProgress: true,
                 restoreSettings: !this.loadOptions.restoreSettings,
                 restoreStorySettings: !this.loadOptions.restoreStorySettings
             });
+
+            if (!success) {
+                // Paywall check failed or cancelled — abort load silently
+                this.loadOptions = { restoreSettings: true, restoreStorySettings: true };
+                return;
+            }
         }
 
         this.loadOptions = { restoreSettings: true, restoreStorySettings: true };

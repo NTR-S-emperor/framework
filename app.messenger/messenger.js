@@ -1452,6 +1452,9 @@ window.Messenger = {
     'PLATINUM': 5
   },
 
+  // Highest lock tier passed in current story (persisted in saves)
+  highestPassedTier: null,
+
   // API endpoint for code verification
   LOCK_API_URL: 'https://api.s-emperor.studio/verify-code.php',
 
@@ -1566,6 +1569,17 @@ window.Messenger = {
   },
 
   /**
+   * Update the highest passed tier (called when a lock is successfully passed)
+   */
+  updateHighestPassedTier(tier) {
+    const tierLevel = this.TIER_HIERARCHY[tier.toUpperCase()] || 0;
+    const currentLevel = this.TIER_HIERARCHY[(this.highestPassedTier || '').toUpperCase()] || 0;
+    if (tierLevel > currentLevel) {
+      this.highestPassedTier = tier.toUpperCase();
+    }
+  },
+
+  /**
    * Parse a lock file and return { tier, targetFile }
    * Lock file format:
    *   [GOLD]
@@ -1626,6 +1640,9 @@ window.Messenger = {
     const verification = await this.verifyStoredCodes(lockData.tier);
 
     if (verification.valid) {
+      // Track highest tier passed
+      this.updateHighestPassedTier(lockData.tier);
+
       // Record the action in history for going back
       if (!Array.isArray(conv.actionHistory)) conv.actionHistory = [];
       conv.actionHistory.push({
@@ -1749,6 +1766,9 @@ window.Messenger = {
       if (result.success) {
         // Save the tier
         this.saveTier(code, result.tier);
+
+        // Track highest tier passed
+        this.updateHighestPassedTier(lockData.tier);
 
         // Close modal
         this.closeLockModal();
