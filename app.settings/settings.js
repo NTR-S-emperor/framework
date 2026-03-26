@@ -14,7 +14,7 @@ window.Settings = {
         doubleplaySpeed: 500,   // ms between each message in very fast mode (100-1000)
         autoplaySpeed: 1500,    // ms between each message in auto mode (500-5000)
         wallpaper: 'default',
-        autoExpandMedia: true,  // Automatically open images/videos in lightbox when received
+        autoExpandMedia: false,  // Automatically open images/videos in lightbox when received
         showChoiceHints: true   // Show hints on story choices when available
     },
 
