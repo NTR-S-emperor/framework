@@ -43,6 +43,8 @@
         { term: '$spy_unlock_instapics', description: 'Show InstaPics on girlfriend\'s phone', page: 'spy.html', anchor: '#unlock' },
         { term: '$spy_unlock_onlyslut', description: 'Show OnlySlut on girlfriend\'s phone', page: 'spy.html', anchor: '#unlock' },
         { term: '$spy_anchor', description: 'Set visibility anchor for Spy App content', page: 'spy.html', anchor: '#anchors' },
+        { term: '$spy_anchor_start', description: 'Begin conditional branch section in Spy App', page: 'spy.html', anchor: '#branching' },
+        { term: '$spy_anchor_end', description: 'End conditional branch section in Spy App', page: 'spy.html', anchor: '#branching' },
 
         // Wallet
         { term: '$wallet.unlock', description: 'Unlock the Wallet app (optionally with initial balance)', page: 'wallet.html', anchor: '#unlock' },

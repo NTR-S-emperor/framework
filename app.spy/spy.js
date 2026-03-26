@@ -1,9 +1,26 @@
 // app.spy/spy.js
 
 /**
- * Current spy anchor level (controls how much content is visible on GF's phone)
+ * Triggered spy anchors (controls which content is visible on GF's phone)
+ * Ordered array of anchor name strings: ['1', '2', '3', 'cuck_1', '4']
+ * Common anchors are numeric strings ('1', '2'), named anchors have prefixes ('cuck_1', 'nts_2')
  */
-window.currentSpyAnchor = 0;
+window.triggeredSpyAnchors = [];
+
+// Backward compat: currentSpyAnchor returns the highest numeric anchor (used by old save format)
+Object.defineProperty(window, 'currentSpyAnchor', {
+  get() { return window._getHighestNumericAnchor(); },
+  set(val) { /* no-op, use triggeredSpyAnchors directly */ },
+  configurable: true
+});
+window._getHighestNumericAnchor = function() {
+  let max = 0;
+  for (const a of window.triggeredSpyAnchors) {
+    const n = parseInt(a, 10);
+    if (!isNaN(n) && String(n) === a && n > max) max = n;
+  }
+  return max;
+};
 
 /**
  * Unlocked spy content (InstaPics and OnlySlut post filenames)
@@ -127,56 +144,28 @@ window.restoreSpyTopics = function() {
 };
 
 /**
- * Set the spy anchor level (called from Messenger via $spy_anchor_X command)
+ * Add a spy anchor to the triggered set (called from Messenger via $spy_anchor_X command)
+ * @param {string|number} anchor - Anchor name ('1', 'cuck_1', etc.)
  */
-window.setSpyAnchor = function(anchor) {
-  const slug = window.currentStorySlug || 'default';
-  // Only update if the new anchor is higher than current
-  if (anchor > window.currentSpyAnchor) {
-    window.currentSpyAnchor = anchor;
+window.addSpyAnchor = function(anchor) {
+  const name = String(anchor);
+  if (window.triggeredSpyAnchors.includes(name)) return; // Already triggered
 
-    // Save to localStorage
-    try {
-      const saved = localStorage.getItem('studioSpyAnchor') || '{}';
-      const data = JSON.parse(saved);
-      data[slug] = anchor;
-      localStorage.setItem('studioSpyAnchor', JSON.stringify(data));
-    } catch (e) {}
-
-    // Mark SpyMessenger for reload so new content is visible
-    if (window.SpyMessenger) {
-      window.SpyMessenger.dataLoaded = false;
-    }
-    if (window.SpyInstaPics) {
-      window.SpyInstaPics.dataLoaded = false;
-    }
-    if (window.SpyOnlySlut) {
-      window.SpyOnlySlut.dataLoaded = false;
-    }
-  }
-};
-
-/**
- * Force set the spy anchor level to any value (used by goBack)
- * Also marks SpyMessenger for reload so content reflects the new anchor
- */
-window.forceSpyAnchor = function(anchor) {
-  const slug = window.currentStorySlug || 'default';
-  window.currentSpyAnchor = anchor;
+  window.triggeredSpyAnchors.push(name);
 
   // Save to localStorage
+  const slug = window.currentStorySlug || 'default';
   try {
     const saved = localStorage.getItem('studioSpyAnchor') || '{}';
     const data = JSON.parse(saved);
-    data[slug] = anchor;
+    data[slug] = [...window.triggeredSpyAnchors];
     localStorage.setItem('studioSpyAnchor', JSON.stringify(data));
   } catch (e) {}
 
-  // Mark SpyMessenger as needing reload (will reload when Spy app opens)
+  // Mark SpyMessenger for reload so new content is visible
   if (window.SpyMessenger) {
     window.SpyMessenger.dataLoaded = false;
   }
-  // Also mark SpyInstaPics and SpyOnlySlut for reload
   if (window.SpyInstaPics) {
     window.SpyInstaPics.dataLoaded = false;
   }
@@ -185,15 +174,70 @@ window.forceSpyAnchor = function(anchor) {
   }
 };
 
-/**
- * Get the current spy anchor level
- */
-window.getSpyAnchor = function() {
-  return window.currentSpyAnchor;
+// Backward compat: setSpyAnchor still works for old numeric calls
+window.setSpyAnchor = function(anchor) {
+  window.addSpyAnchor(anchor);
 };
 
 /**
- * Restore spy anchor from localStorage
+ * Remove the last triggered anchor (used by goBack in MC Messenger)
+ * @param {string|number|Array} previousState - The anchor state to restore
+ */
+window.forceSpyAnchor = function(previousState) {
+  const slug = window.currentStorySlug || 'default';
+
+  if (Array.isArray(previousState)) {
+    // New format: restore full array
+    window.triggeredSpyAnchors = [...previousState];
+  } else {
+    // Old format (number): convert to array ['1', '2', ..., 'N']
+    const n = parseInt(previousState, 10) || 0;
+    window.triggeredSpyAnchors = [];
+    for (let i = 1; i <= n; i++) {
+      window.triggeredSpyAnchors.push(String(i));
+    }
+  }
+
+  // Save to localStorage
+  try {
+    const saved = localStorage.getItem('studioSpyAnchor') || '{}';
+    const data = JSON.parse(saved);
+    data[slug] = [...window.triggeredSpyAnchors];
+    localStorage.setItem('studioSpyAnchor', JSON.stringify(data));
+  } catch (e) {}
+
+  // Mark for reload
+  if (window.SpyMessenger) { window.SpyMessenger.dataLoaded = false; }
+  if (window.SpyInstaPics) { window.SpyInstaPics.dataLoaded = false; }
+  if (window.SpyOnlySlut) { window.SpyOnlySlut.dataLoaded = false; }
+};
+
+/**
+ * Get the triggered spy anchors set
+ * @returns {Array<string>} Ordered array of triggered anchor names
+ */
+window.getSpyAnchors = function() {
+  return window.triggeredSpyAnchors;
+};
+
+/**
+ * Get the current spy anchor level (backward compat - returns highest numeric anchor)
+ */
+window.getSpyAnchor = function() {
+  return window._getHighestNumericAnchor();
+};
+
+/**
+ * Check if a specific anchor has been triggered
+ * @param {string} name - Anchor name to check
+ * @returns {boolean}
+ */
+window.hasSpyAnchor = function(name) {
+  return window.triggeredSpyAnchors.includes(String(name));
+};
+
+/**
+ * Restore spy anchors from localStorage
  */
 window.restoreSpyAnchor = function() {
   const slug = window.currentStorySlug || 'default';
@@ -201,10 +245,21 @@ window.restoreSpyAnchor = function() {
     const saved = localStorage.getItem('studioSpyAnchor');
     if (saved) {
       const data = JSON.parse(saved);
-      window.currentSpyAnchor = data[slug] || 0;
+      const val = data[slug];
+      if (Array.isArray(val)) {
+        window.triggeredSpyAnchors = [...val];
+      } else if (typeof val === 'number' && val > 0) {
+        // Backward compat: convert old numeric format to array
+        window.triggeredSpyAnchors = [];
+        for (let i = 1; i <= val; i++) {
+          window.triggeredSpyAnchors.push(String(i));
+        }
+      } else {
+        window.triggeredSpyAnchors = [];
+      }
     }
   } catch (e) {
-    window.currentSpyAnchor = 0;
+    window.triggeredSpyAnchors = [];
   }
 };
 
@@ -305,14 +360,20 @@ window.Spy = {
 
     this.initDOM();
 
-    // Sync anchor from localStorage to ensure we have the latest value
+    // Sync anchors from localStorage to ensure we have the latest value
     // (goBack in MC Messenger updates localStorage via forceSpyAnchor)
     const slug = window.currentStorySlug || 'default';
     try {
       const saved = localStorage.getItem('studioSpyAnchor');
       if (saved) {
         const data = JSON.parse(saved);
-        window.currentSpyAnchor = data[slug] || 0;
+        const val = data[slug];
+        if (Array.isArray(val)) {
+          window.triggeredSpyAnchors = [...val];
+        } else if (typeof val === 'number' && val > 0) {
+          window.triggeredSpyAnchors = [];
+          for (let i = 1; i <= val; i++) window.triggeredSpyAnchors.push(String(i));
+        }
       }
     } catch (e) {}
 
@@ -731,10 +792,17 @@ window.SpyMessenger = {
     this.characters = {};
     this.fileSequence = [];
     this.navigationTargets = {};
-    // previousAnchor = currentAnchor - 1
-    // When currentAnchor = N, new content = between $spy_anchor_{N-1} and $spy_anchor_N
-    // The separator for anchor N-1 marks where this new content starts
-    this.previousAnchor = Math.max(0, (window.getSpyAnchor ? window.getSpyAnchor() : 0) - 1);
+    // previousAnchor = the second-to-last common (numeric) anchor in the triggered set
+    // This is the separator that marks where new content starts for scrolling
+    const anchors = window.getSpyAnchors ? window.getSpyAnchors() : [];
+    const commonAnchors = anchors.filter(a => /^\d+$/.test(a));
+    if (commonAnchors.length >= 2) {
+      this.previousAnchor = commonAnchors[commonAnchors.length - 2];
+    } else {
+      this.previousAnchor = null; // No previous → scroll to top
+    }
+    // Also store the full triggered set for the parser
+    this.triggeredSet = new Set(anchors.map(String));
     // Reset visit tracking so we scroll to new content when anchor changes
     this.hasVisitedInSession = {};
     this.scrollPositions = {};
@@ -862,14 +930,13 @@ window.SpyMessenger = {
    */
   async loadConversationsFromStart() {
     // Track files with their associated anchor (files linked after an anchor inherit that anchor)
-    const filesToParse = [{ filename: 'start.txt', linkedAfterAnchor: 0 }];
-    const currentAnchor = window.getSpyAnchor ? window.getSpyAnchor() : 0;
+    const filesToParse = [{ filename: 'start.txt', linkedAfterAnchor: null }];
+    const triggeredSet = this.triggeredSet || new Set();
     let fileIndex = 0;
     let stopParsing = false;
 
-    // If anchor is 0, don't parse any content (SpyApp is unlocked but empty)
-    // Content before $spy_anchor_1 requires currentAnchor >= 1
-    if (currentAnchor === 0) {
+    // If no anchors triggered, don't parse any content
+    if (triggeredSet.size === 0) {
       return;
     }
 
@@ -878,9 +945,8 @@ window.SpyMessenger = {
       const filename = fileEntry.filename;
       const linkedAfterAnchor = fileEntry.linkedAfterAnchor || 0;
 
-      // Skip files linked after an anchor that we haven't reached yet
-      // Files linked after $spy_anchor_N require currentAnchor > N to be visible
-      if (linkedAfterAnchor > 0 && linkedAfterAnchor >= currentAnchor) {
+      // Skip files linked after an anchor that hasn't been triggered
+      if (linkedAfterAnchor && !triggeredSet.has(String(linkedAfterAnchor))) {
         fileIndex++;
         continue;
       }
@@ -959,7 +1025,7 @@ window.SpyMessenger = {
                   isGroup: isGroup,
                   participants: participants,
                   participantColors: participantColors,
-                  lastSeparatorAnchor: 0 // Track last separator to avoid duplicates
+                  lastSeparatorAnchor: null // Track last separator to avoid duplicates
                 };
               }
 
@@ -971,10 +1037,9 @@ window.SpyMessenger = {
 
               // If this file was linked after an anchor, add a separator
               // to indicate this content is from a previous anchor
-              // Only add if we haven't already added a separator for this anchor
-              if (linkedAfterAnchor > 0 && this.conversationsByKey[contactKey]) {
+              if (linkedAfterAnchor && this.conversationsByKey[contactKey]) {
                 const conv = this.conversationsByKey[contactKey];
-                if ((conv.lastSeparatorAnchor || 0) < linkedAfterAnchor) {
+                if (conv.lastSeparatorAnchor !== linkedAfterAnchor) {
                   conv.messages.push({
                     type: 'separator',
                     anchor: linkedAfterAnchor
@@ -988,6 +1053,8 @@ window.SpyMessenger = {
 
         // Track the last anchor encountered in this file (for $talks that come after it)
         let lastAnchorInFile = linkedAfterAnchor;
+        // Track if we're inside a named START/END block that's being skipped
+        let skippingBlock = null; // null = not skipping, string = the block name being skipped
 
         // Parse messages
         while (i < lines.length) {
@@ -1011,18 +1078,51 @@ window.SpyMessenger = {
             continue;
           }
 
-          // Check for $spy_anchor_X - stop adding messages if anchor >= currentAnchor
-          // $spy_anchor_N marks the END of chapter N: content before it is visible when currentAnchor >= N
-          // New content (chapter N) = between $spy_anchor_{N-1} and $spy_anchor_N
-          const anchorMatch = trimmed.match(/^\$spy_anchor[_\s]*(\d+)$/i);
-          if (anchorMatch) {
-            const anchor = parseInt(anchorMatch[1], 10);
-            // Update the last anchor encountered
-            lastAnchorInFile = anchor;
+          // Check for $spy_anchor_NAME_start - begin named conditional block
+          const startMatch = trimmed.match(/^\$spy_anchor[_\s]*(.+?)_start$/i);
+          if (startMatch) {
+            const blockName = startMatch[1].trim();
+            if (!triggeredSet.has(blockName)) {
+              // This block's anchor wasn't triggered → skip until matching _end
+              skippingBlock = blockName;
+            }
+            continue;
+          }
 
-            if (anchor >= currentAnchor) {
-              // Stop adding messages but continue reading to find $talks
-              // These files are linked AFTER this anchor, so they inherit it
+          // Check for $spy_anchor_NAME_end - end named conditional block
+          const endMatch = trimmed.match(/^\$spy_anchor[_\s]*(.+?)_end$/i);
+          if (endMatch) {
+            const blockName = endMatch[1].trim();
+            if (skippingBlock === blockName) {
+              skippingBlock = null; // Resume normal parsing
+            }
+            continue;
+          }
+
+          // If we're inside a skipped block, skip everything except $talks and other anchors
+          if (skippingBlock) {
+            // Still follow $talks inside skipped blocks (they might lead to other content)
+            // But they inherit the skipped block's anchor
+            const skippedTalksMatch = trimmed.match(/^\$talks\s*=\s*(.+)$/i);
+            if (skippedTalksMatch) {
+              const nextFile = skippedTalksMatch[1].trim();
+              if (!isFileInQueue(nextFile) && !this.parsedFiles.includes(nextFile)) {
+                filesToParse.push({ filename: nextFile, linkedAfterAnchor: skippingBlock });
+              }
+            }
+            continue;
+          }
+
+          // Check for $spy_anchor_X - common anchor (marks end of a chapter)
+          // Accepts both numeric ('3') and named ('cuck_1') formats
+          const anchorMatch = trimmed.match(/^\$spy_anchor[_\s]*(.+)$/i);
+          if (anchorMatch) {
+            const anchorName = anchorMatch[1].trim();
+            // Update the last anchor encountered
+            lastAnchorInFile = anchorName;
+
+            if (!triggeredSet.has(anchorName)) {
+              // Anchor not triggered → stop adding messages, but read remaining $talks
               while (i < lines.length) {
                 const remainingLine = lines[i].trim();
                 i++;
@@ -1030,22 +1130,21 @@ window.SpyMessenger = {
                 if (remainingTalksMatch) {
                   const nextFile = remainingTalksMatch[1].trim();
                   if (!isFileInQueue(nextFile) && !this.parsedFiles.includes(nextFile)) {
-                    filesToParse.push({ filename: nextFile, linkedAfterAnchor: anchor });
+                    filesToParse.push({ filename: nextFile, linkedAfterAnchor: anchorName });
                   }
                 }
               }
               break;
             }
-            // Add a separator to mark the boundary between anchor sections
-            // This helps users see where "old content" begins when scrolling up
-            if (contactKey && this.conversationsByKey[contactKey]) {
+            // Anchor IS triggered → add separator for common (numeric) anchors only
+            if (/^\d+$/.test(anchorName) && contactKey && this.conversationsByKey[contactKey]) {
               const conv = this.conversationsByKey[contactKey];
-              if ((conv.lastSeparatorAnchor || 0) < anchor) {
+              if (conv.lastSeparatorAnchor !== anchorName) {
                 conv.messages.push({
                   type: 'separator',
-                  anchor: anchor
+                  anchor: anchorName
                 });
-                conv.lastSeparatorAnchor = anchor;
+                conv.lastSeparatorAnchor = anchorName;
               }
             }
             continue;
@@ -1093,7 +1192,7 @@ window.SpyMessenger = {
               if (/^\$(status|talks|insta|slut|lock|delete|thinking|spy_unlock)\b/i.test(thinkTrimmed)) {
                 break;
               }
-              if (/^\$spy_anchor[_\s]*\d+/i.test(thinkTrimmed)) {
+              if (/^\$spy_anchor[_\s]*.+/i.test(thinkTrimmed)) {
                 break;
               }
 
@@ -1436,7 +1535,7 @@ window.SpyMessenger = {
     // the boundary of the new content. Otherwise, select the first conversation in story order.
     let autoSelectKey = null;
 
-    if (this.previousAnchor > 0) {
+    if (this.previousAnchor) {
       // Build unique conversation order from file sequence
       const conversationOrder = [];
       for (const entry of this.fileSequence) {

@@ -118,7 +118,7 @@ window.Messenger = {
         this.activeAudioElements = []; // Reset audio references
 
         // Reset spy state for new story (will be recalculated during replay)
-        window.currentSpyAnchor = 0;
+        window.triggeredSpyAnchors = [];
         window.spyAppUnlocked = false;
         if (typeof window.resetSpyAppState === 'function') {
           window.resetSpyAppState();
@@ -861,18 +861,18 @@ window.Messenger = {
       return;
     }
 
-    // If it's a "spy_anchor" message, update the spy anchor level
+    // If it's a "spy_anchor" message, add anchor to triggered set
     if (scriptMsg.kind === "spy_anchor") {
-      // Record in action history for goBack support
+      // Record in action history for goBack support (save full state for restore)
       if (!Array.isArray(conv.actionHistory)) conv.actionHistory = [];
       conv.actionHistory.push({
         type: 'spy_anchor',
         previousScriptIndex: conv.scriptIndex,
-        previousAnchor: window.currentSpyAnchor || 0
+        previousAnchors: [...(window.triggeredSpyAnchors || [])]
       });
 
-      if (typeof window.setSpyAnchor === 'function') {
-        window.setSpyAnchor(scriptMsg.anchor);
+      if (typeof window.addSpyAnchor === 'function') {
+        window.addSpyAnchor(scriptMsg.anchor);
       }
 
       // Show notification for new spy content
@@ -2691,14 +2691,14 @@ window.Messenger = {
         continue;
       }
 
-      // --- SPY ANCHOR: $spy_anchor_X ---
-      const spyAnchorMatch = trimmed.match(/^\$spy_anchor[_\s]*(\d+)$/i);
+      // --- SPY ANCHOR: $spy_anchor_X (numeric or named, e.g. $spy_anchor_3, $spy_anchor_cuck_1) ---
+      const spyAnchorMatch = trimmed.match(/^\$spy_anchor[_\s]*(.+)$/i);
       if (spyAnchorMatch) {
         flushCurrentMessage();
 
         rawMessages.push({
           kind: "spy_anchor",
-          anchor: parseInt(spyAnchorMatch[1], 10)
+          anchor: spyAnchorMatch[1].trim()
         });
 
         i++;
@@ -2825,7 +2825,7 @@ window.Messenger = {
           if (/^\$(status|talks|insta|slut|lock|delete|thinking|spy_unlock|spy_unlock_instapics|spy_unlock_onlyslut)\b/i.test(thinkTrimmed)) {
             break;
           }
-          if (/^\$spy_anchor[_\s]*\d+/i.test(thinkTrimmed)) {
+          if (/^\$spy_anchor[_\s]*.+/i.test(thinkTrimmed)) {
             break;
           }
 
@@ -3339,8 +3339,8 @@ window.Messenger = {
       }
 
       if (scriptMsg.kind === "spy_anchor") {
-        if (typeof window.setSpyAnchor === 'function') {
-          window.setSpyAnchor(scriptMsg.anchor);
+        if (typeof window.addSpyAnchor === 'function') {
+          window.addSpyAnchor(scriptMsg.anchor);
         }
         conv.scriptIndex++;
         continue;
@@ -4584,9 +4584,9 @@ window.Messenger = {
 
     // Special case: canceling spy_anchor
     if (lastAction.type === 'spy_anchor') {
-      // Restore previous anchor value
+      // Restore previous anchors state
       if (typeof window.forceSpyAnchor === 'function') {
-        window.forceSpyAnchor(lastAction.previousAnchor);
+        window.forceSpyAnchor(lastAction.previousAnchors || lastAction.previousAnchor);
       }
       // Restore script index
       conv.scriptIndex = lastAction.previousScriptIndex;

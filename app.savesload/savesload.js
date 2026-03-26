@@ -184,7 +184,7 @@ window.SavesLoad = {
         // u=unlocked, a=anchor, i=instaPosts, o=slutPosts, apps=spyAppsUnlocked, st=seenThinking
         progress.sp = {
             u: window.spyAppUnlocked || false,
-            a: window.currentSpyAnchor || 0,
+            a: [...(window.triggeredSpyAnchors || [])],
             i: [...(window.unlockedSpyInsta || [])],
             o: [...(window.unlockedSpySlut || [])],
             apps: window.spyAppsUnlocked ? { ...window.spyAppsUnlocked } : { instapics: false, onlyslut: false },
@@ -543,7 +543,15 @@ window.SavesLoad = {
         if (progressData.sp) {
             const sp = progressData.sp;
             window.spyAppUnlocked = sp.u || false;
-            window.currentSpyAnchor = sp.a || 0;
+            // Restore triggered anchors (backward compat: old saves have number, new saves have array)
+            if (Array.isArray(sp.a)) {
+              window.triggeredSpyAnchors = [...sp.a];
+            } else if (typeof sp.a === 'number' && sp.a > 0) {
+              window.triggeredSpyAnchors = [];
+              for (let i = 1; i <= sp.a; i++) window.triggeredSpyAnchors.push(String(i));
+            } else {
+              window.triggeredSpyAnchors = [];
+            }
             window.unlockedSpyInsta = [...(sp.i || [])];
             window.unlockedSpySlut = [...(sp.o || [])];
             window.spyAppsUnlocked = sp.apps ? { ...sp.apps } : { instapics: false, onlyslut: false };
@@ -558,12 +566,12 @@ window.SavesLoad = {
                 }
             }
 
-            // Sync anchor to localStorage so setSpyAnchor and SpyApp open work correctly
+            // Sync anchors to localStorage so addSpyAnchor and SpyApp open work correctly
             try {
                 const slug = window.currentStorySlug || 'default';
                 const saved = localStorage.getItem('studioSpyAnchor') || '{}';
                 const data = JSON.parse(saved);
-                data[slug] = window.currentSpyAnchor;
+                data[slug] = [...window.triggeredSpyAnchors];
                 localStorage.setItem('studioSpyAnchor', JSON.stringify(data));
             } catch (e) {}
 

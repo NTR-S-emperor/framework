@@ -1299,7 +1299,7 @@ window.Settings = {
         } catch (e) {}
 
         // Reset spy global state
-        window.currentSpyAnchor = 0;
+        window.triggeredSpyAnchors = [];
 
         // Reset spy unlocks (posts + app visibility)
         if (window.resetSpyUnlocks) {

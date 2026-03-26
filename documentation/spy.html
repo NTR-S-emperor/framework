@@ -50,6 +50,7 @@
                     <a href="spy.html" class="nav-link active">Spy App</a>
                     <a href="spy.html#unlock" class="nav-link sub">Unlock</a>
                     <a href="spy.html#anchors" class="nav-link sub">Anchors</a>
+                    <a href="spy.html#branching" class="nav-link sub">Branching Paths</a>
                     <a href="spy.html#gf-messenger" class="nav-link sub">GF Messenger</a>
                     <a href="spy.html#gf-social" class="nav-link sub">GF Social</a>
                     <a href="wallet.html" class="nav-link">Wallet</a>
@@ -111,6 +112,8 @@ $spy_unlock_onlyslut</code></pre>
                 <li>When the MC reaches <code>$spy_anchor_X</code> in <strong>his own conversation</strong>, he can see the girlfriend's content up to that anchor</li>
             </ol>
 
+            <p>Anchors can be numeric (<code>$spy_anchor_1</code>, <code>$spy_anchor_2</code>) or named (<code>$spy_anchor_cuck_1</code>, <code>$spy_anchor_nts_3</code>). The naming is completely free.</p>
+
             <h3>Example</h3>
             <p><strong>In the girlfriend's conversation:</strong></p>
 <pre><code>Sarah
@@ -138,6 +141,103 @@ $spy_anchor_2</code></pre>
             <div class="info-box tip">
                 <div class="info-box-title">Tip</div>
                 <p>Use anchors strategically to reveal information at the right moment in your story. This creates dramatic tension when the MC discovers what his girlfriend has been doing.</p>
+            </div>
+
+            <!-- ========== BRANCHING PATHS ========== -->
+            <h2 id="branching">Branching Paths</h2>
+            <p>You can create different versions of the girlfriend's conversations based on the MC's choices. This lets you show a different story on the girlfriend's phone depending on the path the player takes.</p>
+
+            <h3>Concept</h3>
+            <p>The girlfriend's conversations remain a single linear file. Branch-specific sections are enclosed between <code>_start</code> and <code>_end</code> markers. Only the sections whose anchors were triggered by the MC are visible to the player.</p>
+
+            <h3>Syntax</h3>
+<pre><code>$spy_anchor_NAME_start    (begin conditional section)
+...content...
+$spy_anchor_NAME_end      (end conditional section)</code></pre>
+
+            <p>The <code>NAME</code> is the anchor name that the MC must trigger for this section to be visible. The naming is completely free: <code>cuck_1</code>, <code>nts_2</code>, <code>romance_3</code>, <code>evil_path_7</code>, etc.</p>
+
+            <h3>Full Example</h3>
+            <p><strong>In the girlfriend's conversation (SpyApp side):</strong></p>
+<pre><code>Skye
+sk : Hey girl!
+gf : Hey! What are you up to?
+sk : Just hanging out
+$spy_anchor_1
+sk : So what happened last night?
+gf : Depends who you ask...
+
+$spy_anchor_cuck_1_start
+gf : I went to the party with Lamar
+sk : And?! Tell me everything!
+gf : Let's just say he didn't disappoint...
+$spy_anchor_cuck_1_end
+
+$spy_anchor_nts_1_start
+gf : I stayed home with $mc
+sk : Boring!
+gf : Actually it was really nice, we talked for hours
+$spy_anchor_nts_1_end
+
+sk : Anyway, let's meet up tomorrow
+gf : Sure!
+$spy_anchor_2</code></pre>
+
+            <p><strong>In the MC's conversation (based on player choices):</strong></p>
+            <p>On the <strong>cuck path</strong>, the MC encounters:</p>
+<pre><code>$spy_anchor_1
+...story continues...
+$spy_anchor_cuck_1
+...story continues...
+$spy_anchor_2</code></pre>
+            <p>On the <strong>nts path</strong>, the MC encounters:</p>
+<pre><code>$spy_anchor_1
+...story continues...
+$spy_anchor_nts_1
+...story continues...
+$spy_anchor_2</code></pre>
+
+            <h3>What the player sees</h3>
+            <p>When the MC triggers <code>$spy_anchor_2</code>:</p>
+            <ul>
+                <li><strong>Cuck player</strong> sees: common messages + cuck section + common ending (the nts section is invisible)</li>
+                <li><strong>NTS player</strong> sees: common messages + nts section + common ending (the cuck section is invisible)</li>
+            </ul>
+
+            <div class="info-box info">
+                <div class="info-box-title">How it works internally</div>
+                <p>Each triggered anchor is stored in an ordered list. When the player opens the Spy App, the parser reads the girlfriend's conversations and checks each <code>_start</code> marker against the list. If the anchor hasn't been triggered, everything between <code>_start</code> and <code>_end</code> is skipped. Common anchors (without <code>_start/_end</code>) work as before - they mark chapter boundaries.</p>
+            </div>
+
+            <h3>Cross-file branching</h3>
+            <p>Branch sections can span across files. For example, the content between <code>$spy_anchor_1</code> and <code>$spy_anchor_cuck_1</code> can start in a common file and continue in a branch-specific file:</p>
+
+<pre><code><strong>common/3.txt:</strong>
+Skye
+sk : common dialogue
+$spy_anchor_3
+sk : more common dialogue (new chapter starts here)
+$talks = cuck/1.txt
+
+<strong>cuck/1.txt:</strong>
+Skye
+sk : cuck-specific dialogue
+$spy_anchor_cuck_1
+$talks = common/4.txt
+
+<strong>common/4.txt:</strong>
+Skye
+sk : back to common dialogue
+$spy_anchor_4</code></pre>
+
+            <div class="info-box tip">
+                <div class="info-box-title">Tips for branching</div>
+                <ul>
+                    <li>You can create as many branches as you want: <code>cuck</code>, <code>nts</code>, <code>romance</code>, <code>evil</code>, etc.</li>
+                    <li>Branches can return to common content at any point using common numeric anchors (<code>$spy_anchor_4</code>)</li>
+                    <li>You can mix inline blocks (<code>_start/_end</code>) and separate files depending on the amount of branch-specific content</li>
+                    <li>The MC's choices in his Messenger determine which <code>$spy_anchor</code> commands he encounters, which in turn determines what appears on the girlfriend's phone</li>
+                </ul>
             </div>
 
             <!-- ========== GF MESSENGER ========== -->
@@ -203,7 +303,17 @@ $spy_anchor_2</code></pre>
                 <tr>
                     <td><code>$spy_anchor_X</code></td>
                     <td>Works</td>
-                    <td>Set anchor points for MC visibility</td>
+                    <td>Set anchor points for MC visibility (numeric or named)</td>
+                </tr>
+                <tr>
+                    <td><code>$spy_anchor_NAME_start</code></td>
+                    <td>Works</td>
+                    <td>Begin conditional section (visible only if NAME was triggered)</td>
+                </tr>
+                <tr>
+                    <td><code>$spy_anchor_NAME_end</code></td>
+                    <td>Works</td>
+                    <td>End conditional section</td>
                 </tr>
                 <tr>
                     <td><code>$status</code></td>
@@ -313,7 +423,17 @@ John = Amazing!</code></pre>
                 <tr>
                     <td><code>$spy_anchor_X</code></td>
                     <td>Both</td>
-                    <td>Set visibility anchor point (X = number)</td>
+                    <td>Set visibility anchor point (X = number or name)</td>
+                </tr>
+                <tr>
+                    <td><code>$spy_anchor_NAME_start</code></td>
+                    <td>GF's Messenger</td>
+                    <td>Begin conditional section for branch NAME</td>
+                </tr>
+                <tr>
+                    <td><code>$spy_anchor_NAME_end</code></td>
+                    <td>GF's Messenger</td>
+                    <td>End conditional section for branch NAME</td>
                 </tr>
                 <tr>
                     <td><code>(liked)</code></td>
