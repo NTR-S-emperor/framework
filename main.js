@@ -508,6 +508,8 @@ function initApp() {
   const spyScreen        = document.getElementById('spyScreen');        // Spy app screen
   const openSpyBtn       = document.getElementById('openSpyBtn');       // Spy icon
   const walletScreen     = document.getElementById('walletScreen');     // Wallet app screen
+  const friendsgameScreen = document.getElementById('friendsgameScreen'); // Friends Game screen
+  const openFriendsGameBtn = document.getElementById('openFriendsGameBtn'); // Friends Game icon
   const openWalletBtn    = document.getElementById('openWalletBtn');    // Wallet icon
   const disclaimerPopup  = document.getElementById('disclaimerPopup');  // Disclaimer popup
   const openDisclaimerBtn = document.getElementById('openDisclaimerBtn'); // Disclaimer icon
@@ -528,6 +530,7 @@ function initApp() {
     if (tipsScreen) tipsScreen.classList.add('hidden');
     if (spyScreen) spyScreen.classList.add('hidden');
     if (walletScreen) walletScreen.classList.add('hidden');
+    if (friendsgameScreen) friendsgameScreen.classList.add('hidden');
 
     // Cleanup spy mode if it was active
     if (window.Spy && typeof window.Spy.cleanup === 'function') {
@@ -564,6 +567,7 @@ function initApp() {
     if (tipsScreen) tipsScreen.classList.add('hidden');
     if (spyScreen) spyScreen.classList.add('hidden');
     if (walletScreen) walletScreen.classList.add('hidden');
+    if (friendsgameScreen) friendsgameScreen.classList.add('hidden');
 
     // force a uniform white background for the app
     if (phoneFrame) {
@@ -596,6 +600,7 @@ function initApp() {
     if (tipsScreen) tipsScreen.classList.add('hidden');
     if (spyScreen) spyScreen.classList.add('hidden');
     if (walletScreen) walletScreen.classList.add('hidden');
+    if (friendsgameScreen) friendsgameScreen.classList.add('hidden');
 
     // force a uniform white background for the app
     if (phoneFrame) {
@@ -623,6 +628,7 @@ function initApp() {
     if (tipsScreen) tipsScreen.classList.add('hidden');
     if (spyScreen) spyScreen.classList.add('hidden');
     if (walletScreen) walletScreen.classList.add('hidden');
+    if (friendsgameScreen) friendsgameScreen.classList.add('hidden');
 
     // dark background + texture (handled in CSS)
     if (phoneFrame) {
@@ -655,6 +661,7 @@ function initApp() {
     if (tipsScreen) tipsScreen.classList.add('hidden');
     if (spyScreen) spyScreen.classList.add('hidden');
     if (walletScreen) walletScreen.classList.add('hidden');
+    if (friendsgameScreen) friendsgameScreen.classList.add('hidden');
 
     // dark background (like Messenger)
     if (phoneFrame) {
@@ -687,6 +694,7 @@ function initApp() {
     if (tipsScreen) tipsScreen.classList.add('hidden');
     if (spyScreen) spyScreen.classList.add('hidden');
     if (walletScreen) walletScreen.classList.add('hidden');
+    if (friendsgameScreen) friendsgameScreen.classList.add('hidden');
 
     // dark background (like Messenger)
     if (phoneFrame) {
@@ -719,6 +727,7 @@ function initApp() {
     if (tipsScreen) tipsScreen.classList.add('hidden');
     if (spyScreen) spyScreen.classList.add('hidden');
     if (walletScreen) walletScreen.classList.add('hidden');
+    if (friendsgameScreen) friendsgameScreen.classList.add('hidden');
 
     // dark background (like Messenger)
     if (phoneFrame) {
@@ -751,6 +760,7 @@ function initApp() {
     if (settingsScreen) settingsScreen.classList.add('hidden');
     if (spyScreen) spyScreen.classList.add('hidden');
     if (walletScreen) walletScreen.classList.add('hidden');
+    if (friendsgameScreen) friendsgameScreen.classList.add('hidden');
 
     // dark background (like Messenger)
     if (phoneFrame) {
@@ -783,6 +793,7 @@ function initApp() {
     if (settingsScreen) settingsScreen.classList.add('hidden');
     if (tipsScreen) tipsScreen.classList.add('hidden');
     if (walletScreen) walletScreen.classList.add('hidden');
+    if (friendsgameScreen) friendsgameScreen.classList.add('hidden');
 
     // dark background (like Messenger)
     if (phoneFrame) {
@@ -1339,6 +1350,50 @@ function initApp() {
   if (patreonButton) {
     patreonButton.addEventListener('click', () => {
       window.open('https://www.patreon.com/c/NTREmperor', '_blank');
+    });
+  }
+
+  // ============================================================
+  // 4a. Friends Game button
+  // ============================================================
+
+  function showFriendsGame() {
+    if (!homeScreen || !friendsgameScreen) return;
+
+    if (window.Messenger && typeof window.Messenger.onClose === 'function') {
+      window.Messenger.onClose();
+    }
+
+    homeScreen.classList.add('hidden');
+    friendsgameScreen.classList.remove('hidden');
+    if (instapicsScreen) instapicsScreen.classList.add('hidden');
+    if (onlyslutScreen) onlyslutScreen.classList.add('hidden');
+    if (messengerScreen) messengerScreen.classList.add('hidden');
+    if (galleryScreen) galleryScreen.classList.add('hidden');
+    if (savesloadScreen) savesloadScreen.classList.add('hidden');
+    if (settingsScreen) settingsScreen.classList.add('hidden');
+    if (tipsScreen) tipsScreen.classList.add('hidden');
+    if (spyScreen) spyScreen.classList.add('hidden');
+    if (walletScreen) walletScreen.classList.add('hidden');
+
+    // Dark background (same as Settings/Messenger)
+    if (phoneFrame) {
+      phoneFrame.classList.add('phone-app-dark');
+      phoneFrame.classList.remove('phone-app-white');
+    }
+
+    // Keep the original light battery
+    if (batteryImg && originalBatterySrc) {
+      batteryImg.setAttribute('src', originalBatterySrc);
+    }
+  }
+
+  if (openFriendsGameBtn) {
+    openFriendsGameBtn.addEventListener('click', () => {
+      showFriendsGame();
+      if (window.FriendsGame && typeof window.FriendsGame.init === 'function') {
+        window.FriendsGame.init();
+      }
     });
   }
 

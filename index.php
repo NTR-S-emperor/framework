@@ -76,6 +76,7 @@ function v($path) {
   <link rel="stylesheet" href="<?= v('app.tips/tips.css') ?>">
   <link rel="stylesheet" href="<?= v('app.spy/spy.css') ?>">
   <link rel="stylesheet" href="<?= v('app.wallet/wallet.css') ?>">
+  <link rel="stylesheet" href="<?= v('app.friendsgame/friendsgame.css') ?>">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.12.2/lottie.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/twemoji@latest/dist/twemoji.min.js"></script>
   <!-- Pre-calculate scale before content renders to avoid visual jump -->
@@ -269,6 +270,14 @@ function v($path) {
                   <span class="app-icon-label" data-i18n="app.patreon">Patreon</span>
                 </button>
 
+                <!-- 7b. FRIENDS GAME -->
+                <button class="app-icon app-friendsgame" id="openFriendsGameBtn">
+                  <div class="app-icon-image">
+                    <img src="<?= v('assets/apps_icon/friendsgame.png') ?>" alt="Friends Game">
+                  </div>
+                  <span class="app-icon-label">Friends' Games</span>
+                </button>
+
                 <!-- 8. TIPS -->
                 <button class="app-icon app-tips" id="openTipsBtn">
                   <div class="app-icon-image">
@@ -310,6 +319,9 @@ function v($path) {
 
               <!-- Tips screen, hidden by default -->
               <div id="tipsScreen" class="hidden"></div>
+
+              <!-- Friends Game screen, hidden by default -->
+              <div id="friendsgameScreen" class="hidden"></div>
 
               <!-- Spy screen, hidden by default -->
               <div id="spyScreen" class="hidden"></div>
@@ -457,5 +469,6 @@ function v($path) {
   <script src="<?= v('app.tips/tips.js') ?>"></script>
   <script src="<?= v('app.spy/spy.js') ?>"></script>
   <script src="<?= v('app.wallet/wallet.js') ?>"></script>
+  <script src="<?= v('app.friendsgame/friendsgame.js') ?>"></script>
 </body>
 </html>

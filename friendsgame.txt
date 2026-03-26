@@ -1,0 +1,13 @@
+Example Creator
+icone : example.png
+Desc : An incredible story-driven game with multiple endings.
+Patreon = https://www.patreon.com/example
+Boosty = https://boosty.to/example
+Itch = https://example.itch.io/my-game
+SubscribeStar = https://subscribestar.adult/example
+-
+Another Dev
+icone : example.png
+Desc : A thrilling adventure you won't forget.
+Patreon = https://www.patreon.com/anotherdev
+Itch = https://anotherdev.itch.io/game
