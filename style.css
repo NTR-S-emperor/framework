@@ -84,15 +84,9 @@ body.app-body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  border-radius: 42px;
   overflow: hidden;
   transition: opacity 0.5s ease-out;
 }
-
-@media (max-width: 500px) {
-  .loading-screen {
-    border-radius: 30px;
-  }
 }
 
 .loading-screen.fade-out {
