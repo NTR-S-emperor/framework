@@ -5445,8 +5445,13 @@ window.Messenger = {
       bubble.appendChild(audioContainer);
     } else {
       // Text message
-      const textNode = document.createTextNode(this.replaceVariables(msg.text));
+      const text = this.replaceVariables(msg.text);
+      const textNode = document.createTextNode(text);
       bubble.appendChild(textNode);
+      // Mark single-emoji messages for large display (like WhatsApp)
+      if (this.isSingleEmoji(text)) {
+        bubble.classList.add('ms-msg-bubble--emoji-only');
+      }
     }
 
     // Add reactions if present (inside the bubble)
@@ -5817,6 +5822,17 @@ window.Messenger = {
         }
       }, 100);
     });
+  },
+
+  /**
+   * Check if a string contains only a single emoji (no text)
+   */
+  isSingleEmoji(str) {
+    const trimmed = str.trim();
+    if (!trimmed) return false;
+    // Match a single emoji: standard, keycap, flag, ZWJ sequence, or skin-toned
+    const emojiRegex = /^(?:\p{Emoji_Presentation}|\p{Emoji}\uFE0F)(?:\u200D(?:\p{Emoji_Presentation}|\p{Emoji}\uFE0F))*(?:\uD83C[\uDFFB-\uDFFF])?$/u;
+    return emojiRegex.test(trimmed);
   },
 
   escapeHtml(str) {

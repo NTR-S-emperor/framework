@@ -1325,6 +1325,34 @@
 }
 
 /* Smaller emojis in reactions */
+/* Messenger emoji outline (MC Messenger + SpyApp Messenger) */
+.ms-chat-messages img.emoji {
+  filter:
+    drop-shadow(1px 0 0 rgba(0,0,0,0.45))
+    drop-shadow(-1px 0 0 rgba(0,0,0,0.45))
+    drop-shadow(0 1px 0 rgba(0,0,0,0.45))
+    drop-shadow(0 -1px 0 rgba(0,0,0,0.45));
+}
+
+/* Single emoji message: larger display (like WhatsApp) */
+.ms-msg-bubble--emoji-only {
+  background: transparent !important;
+  padding: 2px 0 !important;
+  box-shadow: none !important;
+}
+
+.ms-msg-bubble--emoji-only img.emoji {
+  height: 4.2em;
+  width: 4.2em;
+}
+
+/* Reactions on single-emoji messages: position below instead of overlapping */
+.ms-msg-bubble--emoji-only .ms-msg-reactions {
+  position: relative;
+  margin-top: -2px;
+  justify-content: center;
+}
+
 .ms-msg-reaction img.emoji {
   height: 1em;
   width: 1em;

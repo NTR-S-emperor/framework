@@ -1913,6 +1913,10 @@ window.SpyMessenger = {
       bubbleContent = `${speakerHtml}<div class="ms-msg-audio-container"><button class="ms-msg-audio-play ms-msg-audio-play--paused" type="button">▶</button><div class="ms-msg-audio-progress"><div class="ms-msg-audio-progress-bar"></div></div><div class="ms-msg-audio-duration">--:--</div><audio src="${audioBasePath}/${msg.audio}" preload="metadata"></audio></div>`;
     } else {
       bubbleContent = `${speakerHtml}${this.escapeHtml(msg.text || '')}`;
+      // Mark single-emoji messages for large display
+      if (this.isSingleEmoji(msg.text || '')) {
+        bubbleClass += ' ms-msg-bubble--emoji-only';
+      }
     }
 
     // Build reactions HTML if present (no animation for SpyMessenger - static display)
@@ -2607,6 +2611,16 @@ window.SpyMessenger = {
   /**
    * Escape HTML
    */
+  /**
+   * Check if a string contains only a single emoji (no text)
+   */
+  isSingleEmoji(str) {
+    const trimmed = str.trim();
+    if (!trimmed) return false;
+    const emojiRegex = /^(?:\p{Emoji_Presentation}|\p{Emoji}\uFE0F)(?:\u200D(?:\p{Emoji_Presentation}|\p{Emoji}\uFE0F))*(?:\uD83C[\uDFFB-\uDFFF])?$/u;
+    return emojiRegex.test(trimmed);
+  },
+
   escapeHtml(text) {
     if (!text) return '';
     const div = document.createElement('div');
