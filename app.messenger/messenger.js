@@ -2346,10 +2346,21 @@ window.Messenger = {
 
         let currentChoiceLines = [];
         let currentLabel = null;
+        const lockedLabels = new Set();
 
         while (i < lines.length) {
-          const line = lines[i];
-          const t = line.trim();
+          let line = lines[i];
+          let t = line.trim();
+
+          // Detect locked choices wrapped in [ ] (e.g. [B. Choice 2 $/] or [C. Choice 3])
+          const isLockedLine = t.startsWith('[') && (t.endsWith(']') || /\$\/\s*\]\s*$/.test(t));
+          if (isLockedLine) {
+            // Strip the outer brackets and detect the label inside
+            line = line.replace(/^\s*\[/, '').replace(/\]\s*$/, '');
+            t = line.trim();
+            const lm = t.match(/^([A-Z])\./i);
+            if (lm) lockedLabels.add(lm[1].toUpperCase());
+          }
 
           // Check if line starts with a choice label (A., B., etc.) - if so, it's NOT a speaker line
           const isChoiceLabel = /^\s*[A-Z]\.\s*/i.test(line);
@@ -2442,6 +2453,13 @@ window.Messenger = {
         if (currentLabel && currentChoiceLines.length) {
           const joined = currentChoiceLines.join("\n").trim();
           if (joined) block.options.push({ label: currentLabel, text: joined });
+        }
+
+        // Mark locked choices based on detected [ ] brackets
+        for (let j = 0; j < block.options.length; j++) {
+          if (lockedLabels.has(block.options[j].label)) {
+            block.options[j].locked = true;
+          }
         }
 
         // Extract hints from choice text: {hint} or {$color:hint}
@@ -3896,6 +3914,12 @@ window.Messenger = {
         const btn = document.createElement("button");
         btn.type = "button";
         btn.className = "ms-choice ms-choice--real";
+
+        // Locked choice: disabled & grayed out
+        if (opt.locked) {
+          btn.classList.add("ms-choice--locked");
+          btn.disabled = true;
+        }
 
         // Create text span
         const textSpan = document.createElement("span");

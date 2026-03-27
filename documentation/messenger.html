@@ -40,6 +40,7 @@
                     <a href="messenger.html#thinking" class="nav-link sub">Thinking</a>
                     <a href="messenger.html#choices" class="nav-link sub">Choices</a>
                     <a href="messenger.html#hints" class="nav-link sub">Choice Hints</a>
+                    <a href="messenger.html#locked-choices" class="nav-link sub">Locked Choices</a>
                     <a href="messenger.html#locks" class="nav-link sub">Locks</a>
                     <a href="instapics.html" class="nav-link">InstaPics</a>
                     <a href="instapics.html#characters" class="nav-link sub">Characters</a>
@@ -563,6 +564,47 @@ C. Ignore her message {$red:Bad}</code></pre>
                 </ul>
             </div>
 
+            <h3 id="locked-choices">Locked Choices</h3>
+            <p>You can lock specific choices by wrapping them in square brackets <code>[ ]</code>. Locked choices are <strong>visible but grayed out</strong> and cannot be selected by the player. This is useful when a story path is not yet developed but you still want players to see that it will exist in the future.</p>
+
+            <table>
+                <tr>
+                    <th>Syntax</th>
+                    <th>Description</th>
+                </tr>
+                <tr>
+                    <td><code>[B. Choice text $/]</code></td>
+                    <td>A locked choice (with end marker)</td>
+                </tr>
+                <tr>
+                    <td><code>[C. Choice text]</code></td>
+                    <td>A locked choice (last option, no end marker needed)</td>
+                </tr>
+            </table>
+
+            <h4>Example</h4>
+<pre><code>gf : Which path do you want to take?
+$choices =
+A. The forest path $/
+[B. The mountain path $/]
+[C. The secret cave]
+
+path a
+gf : Let's go through the forest!
+$talks = forest/1.txt
+end path</code></pre>
+
+            <p>In this example, only <strong>Choice A</strong> is available. Choices B and C are displayed but grayed out and unclickable. You don't need to write <code>path b</code> or <code>path c</code> blocks for locked choices.</p>
+
+            <div class="info-box info">
+                <div class="info-box-title">Combining with Hints</div>
+                <p>Locked choices are fully compatible with hints. The hint badge will also appear grayed out:</p>
+<pre><code>$choices =
+A. Go to the party {$green:Good} $/
+[B. Sneak out alone {$orange:Risky} $/]
+[C. Call for backup {$blue:Safe}]</code></pre>
+            </div>
+
             <!-- ========== LOCKS ========== -->
             <h2 id="locks">Locks</h2>
             <p>The <code>$lock</code> command allows you to gate content behind a subscription code. It acts as a <strong>conditional <code>$talks</code></strong>: instead of directly unlocking the next conversation file, it redirects to an intermediate <strong>lock file</strong> that checks the player's subscription tier before granting access.</p>
@@ -713,6 +755,10 @@ $talks = chapter1/8.txt</code></pre>
                 <tr>
                     <td><code>{hint}</code> / <code>{$color:hint}</code></td>
                     <td>Choice hints (colored badges)</td>
+                </tr>
+                <tr>
+                    <td><code>[A. Choice $/]</code></td>
+                    <td>Locked choice (visible but grayed out)</td>
                 </tr>
                 <tr>
                     <td><code>$lock = file.txt</code></td>

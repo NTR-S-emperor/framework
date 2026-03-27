@@ -35,8 +35,8 @@
     }
 
     function updateActiveNav() {
-        // Find all h2 elements with an id attribute
-        var sections = document.querySelectorAll('h2[id]');
+        // Find all h2/h3 elements with an id attribute
+        var sections = document.querySelectorAll('h2[id], h3[id]');
         if (sections.length === 0) return;
 
         var scrollPos = window.scrollY + 150;
