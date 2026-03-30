@@ -63,7 +63,7 @@ window.Messenger = {
   activeAudioElements: [], // references to created audio elements
 
   // Autoplay: 'manual' | 'auto' | 'fast'
-  autoplayMode: 'manual',
+  autoplayMode: 'auto',
   autoplayInterval: null,
   autoplayLongPressTimer: null,
   autoplayLongPressActive: false, // Flag to block events after long press activation
