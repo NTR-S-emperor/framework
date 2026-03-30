@@ -249,6 +249,7 @@ window.Messenger = {
 
       this.renderContacts();
       this.renderConversation();
+      this.resumeAutoPlay();
     } catch (e) {
       console.error('Reload data error:', e.message);
     }
