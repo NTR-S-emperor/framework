@@ -17,10 +17,10 @@ window.InstaPicsTemplates = {
         if (!text) return "";
 
         return text
-            // hashtags (#word)
-            .replace(/#(\w+)/g, `<span class="ip-tag">#$1</span>`)
-            // mentions (@name)
-            .replace(/@(\w+)/g, `<span class="ip-mention">@$1</span>`);
+            // hashtags (#word, supports accented/unicode letters)
+            .replace(/#([\w\p{L}]+)/gu, `<span class="ip-tag">#$1</span>`)
+            // mentions (@name, supports accented/unicode letters)
+            .replace(/@([\w\p{L}]+)/gu, `<span class="ip-mention">@$1</span>`);
     },
 
     userBubble(user, isActive = false) {

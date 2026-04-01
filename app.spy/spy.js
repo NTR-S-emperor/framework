@@ -1163,6 +1163,18 @@ window.SpyMessenger = {
             continue;
           }
 
+          // Handle $status = text
+          if (/^\$status\b/i.test(trimmed)) {
+            const statusMatch = trimmed.match(/^\$status\s*=\s*(.+)$/i);
+            if (statusMatch && statusMatch[1].trim() && contactKey && this.conversationsByKey[contactKey]) {
+              this.conversationsByKey[contactKey].messages.push({
+                kind: 'status',
+                text: statusMatch[1].trim()
+              });
+            }
+            continue;
+          }
+
           // Handle $delete (simple) - mark previous message as deleted
           // Note: $delete = XXXX (timed deletion) is disabled in GF's conversations
           if (trimmed === '$delete') {
@@ -1843,6 +1855,11 @@ window.SpyMessenger = {
           <span class="spy-end-content-text">${endText}</span>
         </div>
       </div>`;
+    }
+
+    // Handle status messages (centered date/time badges)
+    if (msg.kind === 'status') {
+      return `<div class="ms-status-row" data-msg-index="${index}"><div class="ms-status-badge">${this.escapeHtml(msg.text)}</div></div>`;
     }
 
     // Handle thinking trigger (invisible element that triggers the overlay when scrolled into view)

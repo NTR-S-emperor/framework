@@ -2478,7 +2478,8 @@ window.Messenger = {
               label: opt.label,
               text: text.replace(/\{[^}]+\}\s*$/, '').trim(),
               hint: hintMatch[2].trim(),
-              hintColor: hintMatch[1]
+              hintColor: hintMatch[1],
+              locked: opt.locked || false
             };
           } else if (simpleHintMatch) {
             // {hint} format (no color)
@@ -2486,7 +2487,8 @@ window.Messenger = {
               label: opt.label,
               text: text.replace(/\{[^}]+\}\s*$/, '').trim(),
               hint: simpleHintMatch[1].trim(),
-              hintColor: null
+              hintColor: null,
+              locked: opt.locked || false
             };
           }
         }
@@ -2861,7 +2863,7 @@ window.Messenger = {
 
           // Check for other $ commands that would end thinking
           // Note: spy_anchor uses _\d+ pattern (e.g., $spy_anchor_1) so we use a specific match
-          if (/^\$(status|talks|insta|slut|lock|delete|thinking|spy_unlock|spy_unlock_instapics|spy_unlock_onlyslut)\b/i.test(thinkTrimmed)) {
+          if (/^\$(status|talks|insta|slut|lock|delete|thinking|spy_unlock|spy_unlock_instapics|spy_unlock_onlyslut|fake\.choices|choices)\b/i.test(thinkTrimmed)) {
             break;
           }
           if (/^\$spy_anchor[_\s]*.+/i.test(thinkTrimmed)) {
@@ -3116,6 +3118,20 @@ window.Messenger = {
       }
     }
 
+    // Count react messages that don't create entries in conv.messages,
+    // so we can adjust choice block positions accordingly.
+    // $react modifies the previous message instead of adding a new one,
+    // causing a mismatch between rawMessages indices and conv.messages indices.
+    const computeMessageIndex = (afterIndex) => {
+      let reactCount = 0;
+      for (let r = 0; r < afterIndex && r < rawMessages.length; r++) {
+        if (rawMessages[r] && rawMessages[r].kind === 'react') {
+          reactCount++;
+        }
+      }
+      return baseIndex + afterIndex - reactCount;
+    };
+
     // Adding fake choice blocks
     if (choiceBlocks.length) {
       if (!convObj.fakeChoices) {
@@ -3127,8 +3143,8 @@ window.Messenger = {
           convObj.fakeChoices.push({
             filename: block.filename,
             options: block.options,
-            // exact position in the message list
-            messageIndex: baseIndex + (typeof block.afterIndex === "number" ? block.afterIndex : 0),
+            // exact position in the message list (adjusted for react messages)
+            messageIndex: computeMessageIndex(typeof block.afterIndex === "number" ? block.afterIndex : 0),
             // path context (null if not inside a path block)
             pathLabel: block.pathLabel || null
           });
@@ -3147,7 +3163,7 @@ window.Messenger = {
           convObj.realChoices.push({
             filename: block.filename,
             options: block.options, // { label: 'A', text: 'Option text' }
-            messageIndex: baseIndex + (typeof block.afterIndex === "number" ? block.afterIndex : 0)
+            messageIndex: computeMessageIndex(typeof block.afterIndex === "number" ? block.afterIndex : 0)
           });
         }
       }
@@ -3819,7 +3835,7 @@ window.Messenger = {
     // Create the overlay element
     const overlay = document.createElement('div');
     overlay.className = 'ms-thinking-overlay';
-    overlay.textContent = conv.activeThinking.text;
+    overlay.textContent = this.replaceVariables(conv.activeThinking.text);
 
     // Insert the overlay in the chat section
     const chatSection = this.root.querySelector('.ms-chat');
