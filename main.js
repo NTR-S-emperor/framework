@@ -360,11 +360,18 @@ function initApp() {
       window.MusicPlayer.play();
     }
 
-    // Restore spy anchor from localStorage to maintain consistency after page reload
-    // This ensures SpyApp content matches what was previously unlocked
-    if (typeof window.restoreSpyAnchor === 'function') {
-      window.restoreSpyAnchor();
-    }
+    // Clear spy anchors from localStorage to avoid stale data from previous sessions.
+    // Spy state is only restored via the Save & Load system, not from localStorage.
+    window.triggeredSpyAnchors = [];
+    const slug = window.currentStorySlug || 'default';
+    try {
+      const saved = localStorage.getItem('studioSpyAnchor');
+      if (saved) {
+        const data = JSON.parse(saved);
+        delete data[slug];
+        localStorage.setItem('studioSpyAnchor', JSON.stringify(data));
+      }
+    } catch (e) {}
   }
 
   async function handleStorySelection(story) {
